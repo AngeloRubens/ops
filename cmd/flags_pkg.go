@@ -215,6 +215,26 @@ func (flags *PkgCommandFlags) MergeToConfig(c *types.Config) (err error) {
 		c.Env[k] = v
 	}
 
+	if c.ManifestPassthrough == nil {
+		c.ManifestPassthrough = make(map[string]any)
+	}
+
+	// what a package says about the manifest - the working directory its program expects, for
+	// one - is as much a part of it as its arguments
+	for k, v := range pkgConfig.ManifestPassthrough {
+		if _, given := c.ManifestPassthrough[k]; !given {
+			c.ManifestPassthrough[k] = v
+		}
+	}
+
+	if len(c.RunConfig.Ports) == 0 {
+		c.RunConfig.Ports = pkgConfig.RunConfig.Ports
+	}
+
+	if len(c.RunConfig.UDPPorts) == 0 {
+		c.RunConfig.UDPPorts = pkgConfig.RunConfig.UDPPorts
+	}
+
 	if c.BaseVolumeSz == "" {
 		c.BaseVolumeSz = pkgConfig.BaseVolumeSz
 	}
