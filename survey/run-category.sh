@@ -32,6 +32,10 @@ trap 'rm -rf "$work"' EXIT
 log="$work/log"
 boot="$work/boot"
 
+# kept, because a machine that stays silent has usually said why somewhere
+logs="${LOGS:-$PWD/survey-logs}"
+mkdir -p "$logs"
+
 taken=0
 
 for image in $images; do
@@ -42,13 +46,13 @@ for image in $images; do
     printf 'FROM %s\n' "$image" > "$work/Dockerfile"
 
     if ! timeout 600 docker pull -q "$image" > "$log" 2>&1; then
-        printf '%s\t%s\t%s\t%s\t%s\n' "$category" "$image" "unreachable" "-" "-"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$category" "$image" "unreachable" "-" "-" "$(tail -1 "$log" | cut -c1-110)"
         continue
     fi
 
     size="$(docker image inspect -f '{{.Size}}' "$image" 2>/dev/null || echo 0)"
     if [ "$size" -gt "$limit" ]; then
-        printf '%s\t%s\t%s\t%s\t%s\n' "$category" "$image" "too-large" "$((size / 1024 / 1024))MB" "-"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$category" "$image" "too-large" "$((size / 1024 / 1024))MB" "-" "-"
         docker rmi -f "$image" > /dev/null 2>&1
         continue
     fi
@@ -108,7 +112,18 @@ for image in $images; do
         wait $runner 2>/dev/null
     fi
 
-    printf '%s\t%s\t%s\t%s\t%s\n' "$category" "$image" "$outcome" "$program" "$ran"
+    # what the image said for itself, which is where the reason lives when there is one
+    note="$(tr '\r' '\n' < "$boot" 2>/dev/null \
+        | awk '/booting /{seen = 1; next} seen' \
+        | grep -vE "^ *[0-9]+% \||^ *$|assigned|^warning:|overwriting|^Bootable|created\.\.\.$" \
+        | head -1 | cut -c1-110)"
+    [ -z "$note" ] && note="$(grep -m1 -aE "runs a script|through a shell|rewrites its own|nothing but the launcher|not in the image|Error|error" "$log" 2>/dev/null | cut -c1-110)"
+    [ -z "$note" ] && note="-"
+
+    cp "$log" "$logs/$name.build.log" 2>/dev/null
+    [ -s "$boot" ] && cp "$boot" "$logs/$name.boot.log" 2>/dev/null
+
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$category" "$image" "$outcome" "$program" "$ran" "$note"
 
     rm -rf "$HOME/.ops/local_packages/$arch/$name" "$HOME/.ops/images/$(basename "$program")"
     docker rmi -f "$image" > /dev/null 2>&1

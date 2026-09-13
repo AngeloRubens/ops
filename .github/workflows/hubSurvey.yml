@@ -79,4 +79,6 @@ jobs:
         if: always()
         with:
           name: survey-${{ matrix.category }}
-          path: ${{ matrix.category }}.tsv
+          path: |
+            ${{ matrix.category }}.tsv
+            survey-logs/
