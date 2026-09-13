@@ -126,6 +126,10 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 			fmt.Printf("the image starts %s\n", strings.Join(running, " "))
 			argv, argvErr = running, nil
 			// what the launcher exported on its way, which the image does not declare
+			if len(exported) == 0 {
+				fmt.Println("warning: could not read the environment the launcher exported, so " +
+					"only what the image declares is carried")
+			}
 			config.Env = append(config.Env, exported...)
 		}
 	}
