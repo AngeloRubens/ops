@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,13 @@ const pathWhenUnset = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/
 // and forward signals. A unikernel has no children to reap and no second process to forward to,
 // so what counts is the program behind them.
 var initWrappers = []string{"tini", "dumb-init", "catatonit"}
+
+// supervisors are the programs that start other programs and stay to watch them. What the image
+// was built to run is the thing they start, not them or the errands they run.
+var supervisors = []string{
+	"init", "s6-svscan", "s6-supervise", "s6-ftrigrd", "s6-linux-init", "s6-rc",
+	"runsv", "runsvdir", "supervisord", "tini", "dumb-init", "catatonit",
+}
 
 // DockerfileOptions describes a package to build out of a Dockerfile.
 type DockerfileOptions struct {
@@ -397,7 +405,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 			break
 		}
 
-		argv := deepestProgram(top)
+		argv := mainProgram(top)
 		if argv == nil {
 			continue
 		}
@@ -406,8 +414,8 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 		}
 
 		if sameArgv(argv, settled) {
-			// the same program twice over: the tree has stopped changing
-			if times++; times >= 2 {
+			// the same program over several turns: what the image sets up first is gone by then
+			if times++; times >= 4 {
 				return argv, created.ID, nil
 			}
 			continue
@@ -421,9 +429,12 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 	return nil, created.ID, fmt.Errorf("nothing but the launcher was running within %s", timeout)
 }
 
-// deepestProgram picks the program furthest from the launcher: the one a chain of scripts was
-// written to reach.
-func deepestProgram(top dockerContainer.TopResponse) []string {
+// mainProgram picks what the launcher was written to start: the process nearest the top of the
+// tree that is neither a shell nor a supervisor. Nearest rather than furthest, because the
+// programs below it are its own - an erlang runtime keeps a name resolver, grafana installs its
+// plugins - and the latest of those at the same remove, because a setup step run beside it
+// starts first and is gone by the time the server is up.
+func mainProgram(top dockerContainer.TopResponse) []string {
 	pidAt, ppidAt, argsAt := -1, -1, -1
 	for i, title := range top.Titles {
 		switch strings.ToUpper(title) {
@@ -476,16 +487,24 @@ func deepestProgram(top dockerContainer.TopResponse) []string {
 	}
 
 	var best []string
-	deepest := -1
+	nearest, latest := -1, -1
 
 	for _, pid := range pids {
 		name := filepath.Base(processes[pid].argv[0])
-		if name == "sh" || name == "bash" || name == "ps" || contains(initWrappers, name) {
+		if name == "sh" || name == "bash" || name == "ps" || contains(supervisors, name) {
 			continue
 		}
-		if depth := depthOf(pid); depth > deepest {
-			best, deepest = processes[pid].argv, depth
+
+		depth := depthOf(pid)
+		started, err := strconv.Atoi(pid)
+		if err != nil {
+			continue
 		}
+		if nearest >= 0 && (depth > nearest || (depth == nearest && started < latest)) {
+			continue
+		}
+
+		best, nearest, latest = processes[pid].argv, depth, started
 	}
 
 	return best

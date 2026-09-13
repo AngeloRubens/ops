@@ -154,7 +154,7 @@ func TestResolveProgramSaysWhenTheProgramRewroteItsCommandLine(t *testing.T) {
 	}
 }
 
-func TestDeepestProgramTakesWhatTheLauncherStarted(t *testing.T) {
+func TestMainProgramTakesWhatTheLauncherStarted(t *testing.T) {
 	top := dockerContainer.TopResponse{
 		Titles: []string{"PID", "PPID", "ARGS"},
 		Processes: [][]string{
@@ -165,10 +165,56 @@ func TestDeepestProgramTakesWhatTheLauncherStarted(t *testing.T) {
 
 	assert.Equal(t,
 		[]string{"/opt/java/openjdk/bin/java", "-Xmx512m", "org.jboss.as.standalone"},
-		deepestProgram(top))
+		mainProgram(top))
 }
 
-func TestDeepestProgramHasNothingToTakeFromAShell(t *testing.T) {
+func TestMainProgramLeavesTheHelpersOfTheProgramAlone(t *testing.T) {
+	top := dockerContainer.TopResponse{
+		Titles: []string{"PID", "PPID", "ARGS"},
+		Processes: [][]string{
+			{"1", "0", "/bin/sh /usr/local/bin/docker-entrypoint.sh rabbitmq-server"},
+			{"20", "1", "/opt/erlang/bin/beam.smp -W w -- -root /opt/erlang"},
+			{"31", "20", "/opt/erlang/lib/erlang/erts-15.2.7.13/bin/inet_gethost 4"},
+		},
+	}
+
+	argv := mainProgram(top)
+
+	assert.Equal(t, "/opt/erlang/bin/beam.smp", argv[0])
+}
+
+func TestMainProgramPrefersTheOneStillBeingStarted(t *testing.T) {
+	// an image that prepares itself runs the preparation beside the server, and it starts first
+	top := dockerContainer.TopResponse{
+		Titles: []string{"PID", "PPID", "ARGS"},
+		Processes: [][]string{
+			{"1", "0", "/bin/sh /entrypoint.sh apache2-foreground"},
+			{"12", "1", "/usr/bin/rsync -rlDog /usr/src/nextcloud/ /var/www/html/"},
+			{"48", "1", "/usr/sbin/apache2 -DFOREGROUND"},
+		},
+	}
+
+	argv := mainProgram(top)
+
+	assert.Equal(t, "/usr/sbin/apache2", argv[0])
+}
+
+func TestMainProgramSeesPastASupervisor(t *testing.T) {
+	top := dockerContainer.TopResponse{
+		Titles: []string{"PID", "PPID", "ARGS"},
+		Processes: [][]string{
+			{"1", "0", "/package/admin/s6/command/s6-svscan -d4 -- /run/service"},
+			{"14", "1", "/package/admin/s6-2.13.2.0/command/s6-ftrigrd"},
+			{"22", "1", "/usr/bin/python3 /app/tautulli/Tautulli.py --datadir /config"},
+		},
+	}
+
+	argv := mainProgram(top)
+
+	assert.Equal(t, "/usr/bin/python3", argv[0])
+}
+
+func TestMainProgramHasNothingToTakeFromAShell(t *testing.T) {
 	top := dockerContainer.TopResponse{
 		Titles: []string{"PID", "PPID", "ARGS"},
 		Processes: [][]string{
@@ -176,7 +222,7 @@ func TestDeepestProgramHasNothingToTakeFromAShell(t *testing.T) {
 		},
 	}
 
-	assert.Nil(t, deepestProgram(top))
+	assert.Nil(t, mainProgram(top))
 }
 
 func TestExposedPortsSplitsTheProtocols(t *testing.T) {
