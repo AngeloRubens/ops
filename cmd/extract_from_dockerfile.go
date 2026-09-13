@@ -112,10 +112,12 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	config := inspected.Config
 
 	argv, argvErr := entrypointArgv(config.Entrypoint, config.Cmd)
-	ran := ""
+	ran, runsAs, runsAsGroup := "", "", ""
 	if opts.Resolve {
-		running, exported, id, err := resolveByRunning(ctx, cli, tag, opts.ResolveTimeout, opts.Verbose)
-		ran = id
+		found, err := resolveByRunning(ctx, cli, tag, opts.ResolveTimeout, opts.Verbose)
+		if found != nil {
+			ran = found.id
+		}
 		if ran != "" {
 			defer cli.ContainerRemove(ctx, ran, dockerContainer.RemoveOptions{Force: true})
 		}
@@ -123,14 +125,16 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 			// The image was asked and did not answer; what it declares is all there is.
 			fmt.Printf("warning: could not see what the image starts: %v\n", err)
 		} else {
-			fmt.Printf("the image starts %s\n", strings.Join(running, " "))
-			argv, argvErr = running, nil
+			fmt.Printf("the image starts %s\n", strings.Join(found.argv, " "))
+			argv, argvErr = found.argv, nil
+
 			// what the launcher exported on its way, which the image does not declare
-			if len(exported) == 0 {
+			if len(found.env) == 0 {
 				fmt.Println("warning: could not read the environment the launcher exported, so " +
 					"only what the image declares is carried")
 			}
-			config.Env = append(config.Env, exported...)
+			config.Env = append(config.Env, found.env...)
+			runsAs, runsAsGroup = found.uid, found.gid
 		}
 	}
 	if argvErr != nil {
@@ -169,9 +173,19 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	}
 	c.BaseVolumeSz = volumeSize(sysroot)
 	c.RunConfig.Ports, c.RunConfig.UDPPorts = exposedPorts(config.ExposedPorts)
+	c.ManifestPassthrough = map[string]any{}
 	if wd := config.WorkingDir; wd != "" && wd != "/" {
-		c.ManifestPassthrough = map[string]any{"cwd": wd}
+		c.ManifestPassthrough["cwd"] = wd
 		c.Env["PWD"] = wd
+	}
+
+	// who the program ran as, for the programs that will not be root
+	if runsAs != "" && runsAs != "0" {
+		c.ManifestPassthrough["uid"] = runsAs
+		c.ManifestPassthrough["gid"] = runsAsGroup
+	}
+	if len(c.ManifestPassthrough) == 0 {
+		c.ManifestPassthrough = nil
 	}
 
 	reportIgnored(config.User, config.Healthcheck, config.Volumes)
@@ -393,24 +407,35 @@ func exportImageFS(ctx context.Context, cli *dockerClient.Client, tag string, ra
 // script ends in an exec of the program it was written to start, so once the tree has settled
 // the program is there to be read, with the arguments the script worked out - which is what
 // makes an image built around a launcher describable by a manifest at all.
+// started is what an image turned out to be doing when it was asked, and as whom.
+type started struct {
+	argv []string
+	env  []string
+	uid  string
+	gid  string
+	id   string
+}
+
 func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
-	timeout time.Duration, verbose bool) ([]string, []string, string, error) {
+	timeout time.Duration, verbose bool) (*started, error) {
 	if timeout <= 0 {
 		timeout = time.Minute
 	}
 
 	created, err := cli.ContainerCreate(ctx, &dockerContainer.Config{Image: tag}, nil, nil, nil, "")
 	if err != nil {
-		return nil, nil, "", err
+		return nil, err
 	}
 
+	found := &started{id: created.ID}
+
 	if err := cli.ContainerStart(ctx, created.ID, dockerContainer.StartOptions{}); err != nil {
-		return nil, nil, created.ID, err
+		return found, err
 	}
 	defer cli.ContainerStop(ctx, created.ID, dockerContainer.StopOptions{})
 
 	deadline := time.Now().Add(timeout)
-	var settled, settledEnv []string
+	var settled []string
 	times := 0
 
 	for time.Now().Before(deadline) {
@@ -433,17 +458,25 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 		if sameArgv(argv, settled) {
 			// the same program over several turns: what the image sets up first is gone by then
 			if times++; times >= 4 {
-				return argv, environOf(ctx, cli, created.ID, pid), created.ID, nil
+				found.argv = argv
+				found.env = environOf(ctx, cli, created.ID, pid)
+				found.uid, found.gid = whoIsRunning(pid)
+				return found, nil
 			}
 			continue
 		}
-		settled, settledEnv, times = argv, environOf(ctx, cli, created.ID, pid), 1
+
+		settled, times = argv, 1
+		found.argv = argv
+		found.env = environOf(ctx, cli, created.ID, pid)
+		found.uid, found.gid = whoIsRunning(pid)
 	}
 
-	if settled != nil {
-		return settled, settledEnv, created.ID, nil
+	if found.argv != nil {
+		return found, nil
 	}
-	return nil, nil, created.ID, fmt.Errorf("nothing but the launcher was running within %s", timeout)
+
+	return found, fmt.Errorf("nothing but the launcher was running within %s", timeout)
 }
 
 // mainProgram picks what the launcher was written to start: the process nearest the top of the
@@ -567,20 +600,42 @@ func environEntries(raw []byte) []string {
 // containerPid is the number the process goes by inside its own container, which is what a path
 // under /proc means to anything running in there. The kernel lists both, outermost first.
 func containerPid(pid string) string {
+	return statusField(pid, "NSpid:", -1)
+}
+
+// whoIsRunning is the user and group the program turned out to run as. An image is free to say
+// nothing about it and change hands on its way up - the postgres image is root and its entrypoint
+// hands over to the postgres user through gosu - so the only honest place to look is the process
+// that ended up running. It matters because a program may decline to be root: postgres stops at
+// "root" execution of the PostgreSQL server is not permitted, and no flag says otherwise.
+func whoIsRunning(pid string) (string, string) {
+	return statusField(pid, "Uid:", 1), statusField(pid, "Gid:", 1)
+}
+
+// statusField reads one of the numbers the kernel keeps about a process. Several of them are
+// lists - the uid line carries the real one, the effective one and two more, and the pid line
+// carries one number per namespace the process is in - so which is wanted is said by index,
+// counting from the end when it is negative.
+func statusField(pid string, name string, at int) string {
 	status, err := os.ReadFile(filepath.Join("/proc", pid, "status"))
 	if err != nil {
 		return ""
 	}
 
 	for _, line := range strings.Split(string(status), "\n") {
-		if !strings.HasPrefix(line, "NSpid:") {
+		if !strings.HasPrefix(line, name) {
 			continue
 		}
-		fields := strings.Fields(strings.TrimPrefix(line, "NSpid:"))
-		if len(fields) == 0 {
+
+		fields := strings.Fields(strings.TrimPrefix(line, name))
+		if at < 0 {
+			at += len(fields)
+		}
+		if at < 0 || at >= len(fields) {
 			return ""
 		}
-		return fields[len(fields)-1]
+
+		return fields[at]
 	}
 
 	return ""
