@@ -1,0 +1,6 @@
+# The Dockerfile.jvm that quarkus generates for every project, unchanged, from
+# quarkusio/quarkus-quickstarts. Its entrypoint is run-java.sh, the launcher the Red Hat java
+# runtime images carry.
+DOCKERFILE=Dockerfile.jvm
+EXPECT=refuse
+ERROR_MATCH="runs a script"

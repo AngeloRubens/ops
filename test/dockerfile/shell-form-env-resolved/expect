@@ -1,0 +1,7 @@
+# The same image, asked what it starts: the shell has already expanded the variable by then.
+DOCKERFILE=../shell-form-env/Dockerfile
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="hello from java"
+BUILD_FLAGS="--resolve-entrypoint"
+MANIFEST_CHECK='(.Args | index("-Xmx256m") != null)'

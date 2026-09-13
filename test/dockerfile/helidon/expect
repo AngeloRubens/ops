@@ -1,0 +1,6 @@
+# A helidon project, with the dockerfile its own archetype writes.
+DOCKERFILE=app/Dockerfile
+EXPECT=ok
+PORT=8080
+URL_PATH="/greet"
+OUTPUT_MATCH="Hello World"

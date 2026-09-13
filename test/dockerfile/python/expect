@@ -1,0 +1,3 @@
+# An interpreter that has to find its own standard library inside the image.
+EXPECT=ok
+OUTPUT_MATCH="hello from python"

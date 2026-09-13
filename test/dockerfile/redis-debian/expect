@@ -1,0 +1,6 @@
+DOCKERFILE=Dockerfile
+EXPECT=ok
+OUTPUT_MATCH="Ready to accept connections"
+BUILD_FLAGS="--resolve-entrypoint"
+MANIFEST_CHECK='(.Program | test("redis-server$"))'
+BOOT_WAIT=300

@@ -1,0 +1,4 @@
+# A jvm. The temurin images carry an entrypoint script of their own - /__cacert_entrypoint.sh -
+# so even an image whose command is a plain 'java -jar' is started by a script.
+EXPECT=refuse
+ERROR_MATCH="runs a script"

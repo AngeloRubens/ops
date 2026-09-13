@@ -1,0 +1,182 @@
+name: Dockerfile support (sample scenarios)
+
+# Builds a handful of Dockerfiles of the shape people actually write, turns each into a package
+# with 'ops pkg from-dockerfile', and boots it. Every scenario is its own job so that the table
+# of what a unikernel can and cannot be given is readable at a glance.
+
+on:
+  push:
+    branches: [feat/from-dockerfile]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build ops
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l cmd/)
+          if [ -n "$unformatted" ]; then
+            echo "::error::not gofmt'd: $unformatted"
+            gofmt -d cmd/
+            exit 1
+          fi
+
+      - name: vet
+        run: go vet ./cmd/... ./lepton/... ./types/...
+
+      - name: build
+        run: go build -o ops -v
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ops
+          path: ops
+
+  scenario:
+    name: ${{ matrix.scenario }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          # the feature itself
+          - go-static
+          - alpine-rootfs
+          - glibc-dynamic
+          - distroless
+          - build-arg
+          - shell-form
+          - shell-form-chained
+          - shell-form-env
+          - shell-form-env-resolved
+          - script-entrypoint
+          - buildkit-syntax
+          # the shapes people write
+          - node
+          - node-resolved
+          - python
+          - java
+          - java-resolved
+          # the real images, unchanged from their own repositories
+          - springboot
+          - helidon
+          - quarkus
+          - tomcat
+          - tomee
+          - wildfly
+          - glassfish
+          - openliberty
+          - payara
+          - activemq
+          - rocketmq
+          # the same images, asked what they start instead of read
+          - wildfly-resolved
+          - wildfly-interpreted
+          - wildfly-noshare
+          - tomcat-resolved
+          # the images people actually pull, with the configuration they carry
+          - nginx
+          - nginx-resolved
+          - redis
+          - redis-debian
+          - postgres
+          - mysql
+          - mysql-resolved
+          - mongo
+          - memcached
+          - httpd
+          - httpd-resolved
+          - haproxy
+          - rabbitmq
+          - caddy-debian
+          - grafana
+          - grafana-resolved
+          # runtimes and applications that bring a shape of their own
+          - dotnet
+          - uvicorn
+          - uvicorn-module
+          - gunicorn
+          - gunicorn-module
+          - keycloak
+          - keycloak-resolved
+          - jenkins
+          - jenkins-resolved
+          - wordpress
+          # go programs, from the repositories that publish them
+          - etcd
+          - prometheus
+          - coredns
+          - traefik
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ops
+
+      - name: Install qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86
+
+      - name: Run the scenario
+        run: |
+          chmod +x ops test/dockerfile/run.sh
+          export OPS="$PWD/ops"
+          ./test/dockerfile/run.sh ${{ matrix.scenario }}
+
+      - name: What the package looks like
+        if: always()
+        run: |
+          find "$HOME/.ops/local_packages" -maxdepth 3 -name package.manifest -exec sh -c \
+            'echo "--- $1"; cat "$1"' _ {} \; || true
+          du -sh "$HOME"/.ops/local_packages/*/* 2>/dev/null || true
+
+  upstream:
+    name: wildfly (published package, no dockerfile)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ops
+
+      - name: Install qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86
+
+      - name: Run the package nanovms publishes
+        run: |
+          # a curl that cannot connect yet is the normal state of this loop, and the step is run
+          # with -e, which would take the first one as the end of it
+          set +e
+          chmod +x ops
+          ./ops pkg get eyberg/wildfly:36.0.1 2>&1 | tail -2
+          timeout 1800 ./ops pkg load eyberg/wildfly:36.0.1 --accel=false -p 8080 > boot.log 2>&1 &
+          for _ in $(seq 1 300); do
+            answer="$(curl -sS --max-time 2 http://127.0.0.1:8080/ 2>/dev/null)"
+            [ -n "$answer" ] && break
+            sleep 2
+          done
+          pkill -f qemu-system 2>/dev/null
+          echo "--- what it said ---"
+          tr '\r' '\n' < boot.log | grep -vE "^ *[0-9]+% \||^ *$" | tail -30
+          printf '%s' "$answer" | grep -q WildFly || {
+            echo "::error::the published package did not answer either"; exit 1; }
+          echo "the published package answers"
+          exit 0

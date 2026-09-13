@@ -1,0 +1,3 @@
+# COPY --chmod, RUN --mount and heredocs: the three pieces of syntax a build needs buildkit for.
+EXPECT=ok
+OUTPUT_MATCH="modern syntax works"

@@ -1,0 +1,6 @@
+# Apache, asked what it starts: httpd -DFOREGROUND. It forks a worker per connection pool, which
+# a unikernel has no way to do, so the package is as far as this goes.
+DOCKERFILE=../httpd/Dockerfile
+EXPECT=package
+BUILD_FLAGS="--resolve-entrypoint"
+MANIFEST_CHECK='(.Program | test("httpd$"))'

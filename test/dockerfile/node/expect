@@ -1,0 +1,4 @@
+# The shape of most application images: a working directory, an environment and a port. The
+# official node image also carries an entrypoint script, which is what stops this one.
+EXPECT=refuse
+ERROR_MATCH="runs a script"

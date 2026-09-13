@@ -1,0 +1,11 @@
+# The same wildfly image, asked what it starts rather than read. standalone.sh ends in an exec of
+# the jvm, so what comes back is the java command line the script works out - which is a thing a
+# manifest can hold.
+DOCKERFILE=../wildfly/Dockerfile
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="WildFly"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 120"
+MANIFEST_CHECK='(.Program | test("java$")) and (.Args | index("org.jboss.as.standalone") != null)'
+# A gigabyte of file system to lay down and a jvm to start, with no kvm underneath.
+BOOT_WAIT=500

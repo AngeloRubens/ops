@@ -1,0 +1,3 @@
+# Grafana's published image runs /run.sh, whatever the dockerfiles in its repository say.
+EXPECT=refuse
+ERROR_MATCH="runs a script"

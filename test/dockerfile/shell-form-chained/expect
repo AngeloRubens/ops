@@ -1,0 +1,3 @@
+# Two commands chained: there is no shell to chain them.
+EXPECT=refuse
+ERROR_MATCH="through a shell"

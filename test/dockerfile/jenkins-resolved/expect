@@ -1,0 +1,5 @@
+# tini peeled, the script seen through, the jvm behind it taken.
+DOCKERFILE=../jenkins/Dockerfile
+EXPECT=package
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
+MANIFEST_CHECK='(.Program | test("java$")) and (.Args | map(select(test("jenkins"))) | length > 0)'

@@ -1,0 +1,4 @@
+# Startable, and no further: gunicorn is a master that forks its workers, and a unikernel has no
+# fork. Beside uvicorn-module, which serves, this is the fork boundary inside one ecosystem.
+EXPECT=package
+MANIFEST_CHECK='(.Args | index("gunicorn") != null)'

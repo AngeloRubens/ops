@@ -1,0 +1,4 @@
+# Payara puts tini in front of its entrypoint, and the entrypoint itself is a shell form holding
+# a variable, so what stops this one is the shell rather than the script behind it.
+EXPECT=refuse
+ERROR_MATCH="through a shell"
