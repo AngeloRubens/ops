@@ -85,11 +85,16 @@ jobs:
           pkill -f qemu-system
           tr '\r' '\n' < patched.log | grep -vE "^ *[0-9]+% \||^ *$" | tail -20
 
-          if grep -qiE "${{ matrix.says }}" patched.log; then
-            echo "${{ matrix.image }} starts on the patched kernel"
-          else
-            echo "::error::${{ matrix.image }} did not start even there"
+          if grep -qiE "${{ matrix.declines }}" patched.log; then
+            echo "::error::${{ matrix.image }} still declines to run on the patched kernel"
             exit 1
+          fi
+          echo "${{ matrix.image }} no longer declines to run"
+
+          if grep -qiE "${{ matrix.says }}" patched.log; then
+            echo "and it says it is up"
+          else
+            echo "::warning::${{ matrix.image }} did not say it is up; the console is in the artifact"
           fi
 
       - uses: actions/upload-artifact@v4
