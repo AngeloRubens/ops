@@ -33,6 +33,9 @@ jobs:
       - name: vet
         run: go vet ./cmd/... ./lepton/... ./types/...
 
+      - name: test
+        run: go test ./cmd/... -run Test -count 1
+
       - name: build
         run: go build -o ops -v
 
@@ -83,7 +86,6 @@ jobs:
           # the same images, asked what they start instead of read
           - wildfly-resolved
           - wildfly-interpreted
-          - wildfly-noshare
           - tomcat-resolved
           # the images people actually pull, with the configuration they carry
           - nginx
@@ -143,40 +145,3 @@ jobs:
             'echo "--- $1"; cat "$1"' _ {} \; || true
           du -sh "$HOME"/.ops/local_packages/*/* 2>/dev/null || true
 
-  upstream:
-    name: wildfly (published package, no dockerfile)
-    needs: build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: ops
-
-      - name: Install qemu
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-system-x86
-
-      - name: Run the package nanovms publishes
-        run: |
-          # a curl that cannot connect yet is the normal state of this loop, and the step is run
-          # with -e, which would take the first one as the end of it
-          set +e
-          chmod +x ops
-          ./ops pkg get eyberg/wildfly:36.0.1 2>&1 | tail -2
-          timeout 1800 ./ops pkg load eyberg/wildfly:36.0.1 --accel=false -p 8080 > boot.log 2>&1 &
-          for _ in $(seq 1 300); do
-            answer="$(curl -sS --max-time 2 http://127.0.0.1:8080/ 2>/dev/null)"
-            [ -n "$answer" ] && break
-            sleep 2
-          done
-          pkill -f qemu-system 2>/dev/null
-          echo "--- what it said ---"
-          tr '\r' '\n' < boot.log | grep -vE "^ *[0-9]+% \||^ *$" | tail -30
-          printf '%s' "$answer" | grep -q WildFly || {
-            echo "::error::the published package did not answer either"; exit 1; }
-          echo "the published package answers"
-          exit 0

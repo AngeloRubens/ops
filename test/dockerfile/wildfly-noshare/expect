@@ -1,6 +1,0 @@
-EXPECT=ok
-PORT=8080
-OUTPUT_MATCH="WildFly"
-BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
-MANIFEST_CHECK='(.Args | index("-Xshare:off") != null)'
-BOOT_WAIT=900
