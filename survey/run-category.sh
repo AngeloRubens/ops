@@ -92,8 +92,12 @@ for image in $images; do
                 ran="answers"
                 break
             fi
-            # anything the program says of its own, after the two lines the kernel says
-            if [ "$(tr '\r' '\n' < "$boot" | grep -cvE "^ *[0-9]+% \||^ *$|assigned|booting |running local|^warning:|overwriting")" -gt 0 ]; then
+            # anything the program says of its own, which is whatever comes after the line the
+            # kernel prints as it starts and is not ops talking about the image it just made
+            said="$(tr '\r' '\n' < "$boot" \
+                | awk '/booting /{seen = 1; next} seen' \
+                | grep -cvE "^ *[0-9]+% \||^ *$|assigned|^warning:|overwriting|^Bootable|created\.\.\.$")"
+            if [ "${said:-0}" -gt 0 ]; then
                 ran="speaks"
                 break
             fi
