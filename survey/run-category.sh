@@ -50,6 +50,10 @@ for image in $images; do
     name="survey-$(echo "$image" | tr '/:.' '---')"
     printf 'FROM %s\n' "$image" > "$work/Dockerfile"
 
+    # emptied between images, or what one of them said would be read as the next one's answer
+    : > "$log"
+    : > "$boot"
+
     # what the image asks for in its own documentation before it will start: a password it will
     # not do without, a service to load, a command to serve rather than print its help
     configured="-"
