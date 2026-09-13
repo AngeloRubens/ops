@@ -3,6 +3,9 @@ name: What becomes of docker hub
 # Takes the three most pulled images of every docker hub category, straight from the hub's own
 # search, turns each into a unikernel and sees whether it runs. One job per category; the table
 # is the collected output.
+#
+# Operating systems is left out: busybox, alpine and ubuntu are file systems whose command is a
+# shell, so there is no application there to run and nothing to learn from asking.
 
 on:
   push:
@@ -45,7 +48,6 @@ jobs:
           - developer-tools
           - data-science
           - web-servers
-          - operating-systems
           - content-management-system
           - databases-and-storage
           - monitoring-and-observability
