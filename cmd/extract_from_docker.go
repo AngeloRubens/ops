@@ -503,10 +503,17 @@ func copyWholeContainer(cli *dockerClient.Client, containerID string, hostBaseDi
 
 		// dir
 		case tar.TypeDir:
+			// with the mode the image gave it, since a program may insist on it: postgres opens
+			// no data directory that anyone but its owner can read. The owner keeps the run of
+			// it either way, or there would be no putting anything inside.
+			mode := os.FileMode(header.Mode) | 0700
+
 			if _, err := os.Stat(target); err != nil {
-				if err := os.MkdirAll(target, 0755); err != nil {
+				if err := os.MkdirAll(target, mode); err != nil {
 					return err
 				}
+			} else if err := os.Chmod(target, mode); err != nil {
+				return err
 			}
 
 		case tar.TypeSymlink:
