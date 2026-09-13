@@ -173,10 +173,20 @@ func addFilesFromPackage(packagepath string, m *fs.Manifest, ppath string) {
 	}
 
 	for _, e := range entries {
-		if e.IsDir() {
-			err = m.AddDirectory(rootPath+"/"+e.Name(), rootPath+"/"+e.Name(), ppath, true)
+		hostpath := rootPath + "/" + e.Name()
+
+		// a merged /usr leaves /bin, /lib and /sbin as links to their counterparts under /usr,
+		// so the top of a file system taken from a container image is full of them
+		if e.Type()&os.ModeSymlink != 0 {
+			if _, err := os.Stat(hostpath); err != nil {
+				fmt.Printf("warning: %v\n", err)
+				continue
+			}
+			err = m.AddLink(e.Name(), hostpath)
+		} else if e.IsDir() {
+			err = m.AddDirectory(hostpath, hostpath, ppath, true)
 		} else {
-			err = m.AddFile(e.Name(), rootPath+"/"+e.Name())
+			err = m.AddFile(e.Name(), hostpath)
 		}
 		if err != nil {
 			log.Fatal(err)
