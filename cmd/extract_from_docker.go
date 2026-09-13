@@ -443,6 +443,21 @@ func copyFromContainer(cli *dockerClient.Client, containerID string, containerPa
 	return nil
 }
 
+// isKernelPath reports whether a path belongs to the kernel rather than to the image: what a
+// container image carries under /dev, /proc and /sys is the host's, and nanos makes its own.
+func isKernelPath(name string) bool {
+	name = strings.TrimPrefix(name, "./")
+	name = strings.TrimPrefix(name, "/")
+
+	for _, kernelPath := range []string{"dev", "proc", "sys"} {
+		if name == kernelPath || strings.HasPrefix(name, kernelPath+"/") {
+			return true
+		}
+	}
+
+	return false
+}
+
 func copyWholeContainer(cli *dockerClient.Client, containerID string, hostBaseDir string) error {
 	err := os.MkdirAll(path.Dir(hostBaseDir), 0764)
 	if err != nil {
@@ -475,6 +490,12 @@ func copyWholeContainer(cli *dockerClient.Client, containerID string, hostBaseDi
 			continue
 		}
 
+		if isKernelPath(header.Name) {
+			// The kernel makes /dev, /proc and /sys itself, and finding them already there is
+			// fatal to it: nanos asserts in register_special_files().
+			continue
+		}
+
 		target := filepath.Join(hostBaseDir, header.Name)
 
 		// check the file type
@@ -494,9 +515,18 @@ func copyWholeContainer(cli *dockerClient.Client, containerID string, hostBaseDi
 				fmt.Println(err)
 			}
 
+		// a file the archive has already carried, linked to rather than repeated
+		case tar.TypeLink:
+			err = os.Link(filepath.Join(hostBaseDir, header.Linkname), target)
+			if err != nil {
+				fmt.Println(err)
+			}
+
 		// file
 		case tar.TypeReg:
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			// The image may keep a file unreadable even to its owner - /etc/gshadow is mode
+			// zero - and the package has to be able to read back what it has written.
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode)|0400)
 			if err != nil {
 				return err
 			}
