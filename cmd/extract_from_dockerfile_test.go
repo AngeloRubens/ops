@@ -163,9 +163,10 @@ func TestMainProgramTakesWhatTheLauncherStarted(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t,
-		[]string{"/opt/java/openjdk/bin/java", "-Xmx512m", "org.jboss.as.standalone"},
-		mainProgram(top))
+	argv, pid := mainProgram(top)
+
+	assert.Equal(t, []string{"/opt/java/openjdk/bin/java", "-Xmx512m", "org.jboss.as.standalone"}, argv)
+	assert.Equal(t, "42", pid)
 }
 
 func TestMainProgramLeavesTheHelpersOfTheProgramAlone(t *testing.T) {
@@ -178,7 +179,7 @@ func TestMainProgramLeavesTheHelpersOfTheProgramAlone(t *testing.T) {
 		},
 	}
 
-	argv := mainProgram(top)
+	argv, _ := mainProgram(top)
 
 	assert.Equal(t, "/opt/erlang/bin/beam.smp", argv[0])
 }
@@ -194,7 +195,7 @@ func TestMainProgramPrefersTheOneStillBeingStarted(t *testing.T) {
 		},
 	}
 
-	argv := mainProgram(top)
+	argv, _ := mainProgram(top)
 
 	assert.Equal(t, "/usr/sbin/apache2", argv[0])
 }
@@ -210,7 +211,7 @@ func TestMainProgramSeesPastASupervisor(t *testing.T) {
 		},
 	}
 
-	argv := mainProgram(top)
+	argv, _ := mainProgram(top)
 
 	assert.Equal(t, "/usr/bin/python3", argv[0])
 }
@@ -223,7 +224,9 @@ func TestMainProgramHasNothingToTakeFromAShell(t *testing.T) {
 		},
 	}
 
-	assert.Nil(t, mainProgram(top))
+	argv, _ := mainProgram(top)
+
+	assert.Nil(t, argv)
 }
 
 func TestExposedPortsSplitsTheProtocols(t *testing.T) {
