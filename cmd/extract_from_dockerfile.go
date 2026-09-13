@@ -147,6 +147,8 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		return "", "", err
 	}
 
+	discardWhatCannotBeReached(sysroot)
+
 	program, err := resolveProgram(sysroot, argv[0], config.WorkingDir, config.Env)
 	if err != nil {
 		return "", "", err
@@ -167,6 +169,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	}
 
 	reportIgnored(config.User, config.Healthcheck, config.Volumes)
+	reportContents(sysroot)
 
 	manifest, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -551,6 +554,60 @@ func sameArgv(a []string, b []string) bool {
 		}
 	}
 	return true
+}
+
+// discardable are the trees nothing in a unikernel can reach for: documentation, manual pages,
+// message catalogues, and what a package manager keeps in order to know what it installed. No
+// package manager can run here - nanos starts one program and has no exec to start a second -
+// so what they know is of no use to anyone.
+var discardable = []string{
+	"usr/share/man", "usr/share/info", "usr/share/doc/.build-id", "usr/share/gtk-doc",
+	"usr/share/locale", "var/cache", "var/lib/apt/lists", "var/lib/dpkg/info", "var/lib/rpm",
+}
+
+func discardWhatCannotBeReached(sysroot string) {
+	for _, tree := range discardable {
+		os.RemoveAll(filepath.Join(sysroot, tree))
+	}
+}
+
+// reportContents says what the package is made of. A unikernel is meant to carry what its
+// program needs, and an image carries what a distribution installs, so the difference between
+// the two is worth seeing rather than guessing at.
+func reportContents(sysroot string) {
+	trees := map[string]int64{}
+	var total int64
+
+	filepath.Walk(sysroot, func(p string, info os.FileInfo, err error) error {
+		if err != nil || !info.Mode().IsRegular() {
+			return nil
+		}
+		total += info.Size()
+
+		rest, err := filepath.Rel(sysroot, p)
+		if err != nil {
+			return nil
+		}
+		top := strings.SplitN(rest, string(os.PathSeparator), 2)[0]
+		trees[top] += info.Size()
+
+		return nil
+	})
+
+	names := make([]string, 0, len(trees))
+	for name := range trees {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool { return trees[names[i]] > trees[names[j]] })
+
+	fmt.Printf("the file system is %d MB:", total/(1024*1024))
+	for i, name := range names {
+		if i == 4 {
+			break
+		}
+		fmt.Printf(" /%s %dMB", name, trees[name]/(1024*1024))
+	}
+	fmt.Println()
 }
 
 // writeHosts writes the hosts file a container runtime writes for a container and an image does
