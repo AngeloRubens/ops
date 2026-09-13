@@ -39,8 +39,14 @@ var initWrappers = []string{"tini", "dumb-init", "catatonit"}
 // supervisors are the programs that start other programs and stay to watch them. What the image
 // was built to run is the thing they start, not them or the errands they run.
 var supervisors = []string{
-	"init", "s6-svscan", "s6-supervise", "s6-ftrigrd", "s6-linux-init", "s6-rc",
-	"runsv", "runsvdir", "supervisord", "tini", "dumb-init", "catatonit",
+	"init", "runsv", "runsvdir", "supervisord", "tini", "dumb-init", "catatonit",
+}
+
+// isSupervisor reports whether a program is one that starts other programs rather than one to be
+// started. s6, which every linuxserver image is built on, brings dozens of little tools and they
+// are all named alike.
+func isSupervisor(name string) bool {
+	return strings.HasPrefix(name, "s6-") || contains(supervisors, name)
 }
 
 // DockerfileOptions describes a package to build out of a Dockerfile.
@@ -491,7 +497,8 @@ func mainProgram(top dockerContainer.TopResponse) []string {
 
 	for _, pid := range pids {
 		name := filepath.Base(processes[pid].argv[0])
-		if name == "sh" || name == "bash" || name == "ps" || contains(supervisors, name) {
+		// busybox is a shell as often as not, and under s6 it always is
+		if name == "sh" || name == "bash" || name == "busybox" || name == "ps" || isSupervisor(name) {
 			continue
 		}
 

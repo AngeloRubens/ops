@@ -204,7 +204,8 @@ func TestMainProgramSeesPastASupervisor(t *testing.T) {
 		Titles: []string{"PID", "PPID", "ARGS"},
 		Processes: [][]string{
 			{"1", "0", "/package/admin/s6/command/s6-svscan -d4 -- /run/service"},
-			{"14", "1", "/package/admin/s6-2.13.2.0/command/s6-ftrigrd"},
+			{"14", "1", "/package/admin/s6-2.13.2.0/command/s6-notifyoncheck -d -n 300 -w 1000"},
+			{"18", "1", "/bin/busybox sh /run/s6/basedir/scripts/rc.init"},
 			{"22", "1", "/usr/bin/python3 /app/tautulli/Tautulli.py --datadir /config"},
 		},
 	}
