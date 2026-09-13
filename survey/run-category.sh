@@ -6,6 +6,11 @@
 #
 #   ./survey/run-category.sh databases-and-storage [how many]
 #
+# An image that will not start without being told something - postgres wants a password, bitnami
+# wants to be told an empty one is meant - is given what its own documentation says to give it,
+# from survey/config. Otherwise the answer would be about the missing variable rather than about
+# the image.
+#
 # A machine counts as running when it answers on the first port its image exposes, or when it
 # says something of its own after the kernel has finished saying its piece. Nothing is asked of
 # it beyond that: this is about how far the images of the world get, not what they do afterwards.
@@ -44,6 +49,15 @@ for image in $images; do
 
     name="survey-$(echo "$image" | tr '/:' '--')"
     printf 'FROM %s\n' "$image" > "$work/Dockerfile"
+
+    # what the image asks for in its own documentation before it will start: a password it will
+    # not do without, a service to load, a command to serve rather than print its help
+    configured="-"
+    config="$here/config/$(echo "$image" | tr '/:' '--')"
+    if [ -f "$config" ]; then
+        cat "$config" >> "$work/Dockerfile"
+        configured="configured"
+    fi
 
     if ! timeout 600 docker pull -q "$image" > "$log" 2>&1; then
         printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$category" "$image" "unreachable" "-" "-" "$(tail -1 "$log" | cut -c1-110)"
@@ -123,7 +137,7 @@ for image in $images; do
     cp "$log" "$logs/$name.build.log" 2>/dev/null
     [ -s "$boot" ] && cp "$boot" "$logs/$name.boot.log" 2>/dev/null
 
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$category" "$image" "$outcome" "$program" "$ran" "$note"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$category" "$image" "$outcome" "$program" "$ran" "$configured" "$note"
 
     rm -rf "$HOME/.ops/local_packages/$arch/$name" "$HOME/.ops/images/$(basename "$program")"
     docker rmi -f "$image" > /dev/null 2>&1
