@@ -1,0 +1,99 @@
+name: programs that will not be root
+
+# The same image started twice: once on the kernel ops fetches, and once on a kernel built from
+# the branch that lets a manifest say who the process is. Postgres has declined to run as root
+# since 1999 and has no flag to say otherwise, so the pair of runs is the whole answer.
+
+on:
+  push:
+    branches: [ci/uid-end-to-end]
+  workflow_dispatch:
+
+jobs:
+  both-kernels:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: postgres
+            port: 5432
+            says: "database system is ready to accept connections"
+            declines: "root.*execution of the PostgreSQL server is not permitted"
+          - image: memcached
+            port: 11211
+            says: "server listening"
+            declines: "must add '-u root' to start as root"
+    name: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build ops
+        run: go build -o ops -v
+
+      - name: Fetch and build the kernel that can say who the process is
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 nasm build-essential
+          git clone --depth 1 --branch pr/manifest-uid \
+            https://github.com/AngeloRubens/nanos.git nanos
+          make -C nanos -j"$(nproc)" kernel PLATFORM=pc 2>&1 | tail -3
+          ls -l nanos/output/platform/pc/bin/kernel.img
+          printf '{"Kernel":"%s/nanos/output/platform/pc/bin/kernel.img"}\n' "$PWD" > patched.json
+          cat patched.json
+
+      - name: Make the package, and see who it says the program runs as
+        run: |
+          export OPS="$PWD/ops"
+          ./ops pkg from-dockerfile test/uid/${{ matrix.image }}.Dockerfile \
+            --name uid-${{ matrix.image }} --resolve-entrypoint --resolve-timeout 180
+          manifest="$HOME/.ops/local_packages/amd64/uid-${{ matrix.image }}/package.manifest"
+          cat "$manifest"
+          uid="$(jq -r '.ManifestPassthrough.uid // ""' "$manifest")"
+          [ -n "$uid" ] && [ "$uid" != "0" ] || {
+            echo "::error::the package does not say the program runs as anyone in particular"
+            exit 1; }
+          echo "the program runs as uid $uid"
+
+      - name: On the kernel ops fetches
+        run: |
+          set +e
+          timeout 600 ./ops pkg load -l uid-${{ matrix.image }} --accel=false \
+            -p ${{ matrix.port }} > stock.log 2>&1 &
+          for _ in $(seq 1 90); do
+            grep -qiE "${{ matrix.says }}|${{ matrix.declines }}" stock.log && break
+            sleep 2
+          done
+          pkill -f qemu-system
+          tr '\r' '\n' < stock.log | grep -vE "^ *[0-9]+% \||^ *$" | tail -12
+
+      - name: On the kernel that can say who the process is
+        run: |
+          set +e
+          timeout 600 ./ops pkg load -l uid-${{ matrix.image }} -c patched.json --accel=false \
+            -p ${{ matrix.port }} > patched.log 2>&1 &
+          for _ in $(seq 1 120); do
+            grep -qiE "${{ matrix.says }}|${{ matrix.declines }}" patched.log && break
+            sleep 2
+          done
+          pkill -f qemu-system
+          tr '\r' '\n' < patched.log | grep -vE "^ *[0-9]+% \||^ *$" | tail -20
+
+          if grep -qiE "${{ matrix.says }}" patched.log; then
+            echo "${{ matrix.image }} starts on the patched kernel"
+          else
+            echo "::error::${{ matrix.image }} did not start even there"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: uid-${{ matrix.image }}
+          path: "*.log"
