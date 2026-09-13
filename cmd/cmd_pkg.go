@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	api "github.com/nanovms/ops/lepton"
 	"github.com/nanovms/ops/log"
@@ -47,7 +48,7 @@ func PackageCommands() *cobra.Command {
 		Use:       "pkg",
 		Short:     "Package related commands",
 		Args:      cobra.OnlyValidArgs,
-		ValidArgs: []string{"list", "get", "describe", "delete", "contents", "add", "load", "from-docker", "login", "from-pkg"},
+		ValidArgs: []string{"list", "get", "describe", "delete", "contents", "add", "load", "from-docker", "from-dockerfile", "login", "from-pkg"},
 	}
 
 	cmdPkgSearch.PersistentFlags().StringP("arch", "", "", "set different architecture")
@@ -57,6 +58,7 @@ func PackageCommands() *cobra.Command {
 	cmdPkg.AddCommand(contentsCommand())
 	cmdPkg.AddCommand(describeCommand())
 	cmdPkg.AddCommand(fromDockerCommand())
+	cmdPkg.AddCommand(fromDockerfileCommand())
 	cmdPkg.AddCommand(fromRunCommand())
 	cmdPkg.AddCommand(fromPackageCommand())
 	cmdPkg.AddCommand(listCommand())
@@ -831,6 +833,126 @@ func fromDockerCommand() *cobra.Command {
 	persistentFlags.BoolP("nodiscover", "", false, "don't try to discover linked libs")
 
 	return cmdFromDocker
+}
+
+func fromDockerfileCommand() *cobra.Command {
+	var cmdFromDockerfile = &cobra.Command{
+		Use:   "from-dockerfile [dockerfile]",
+		Short: "create a package from a dockerfile",
+		Args:  cobra.MaximumNArgs(1),
+		Run:   fromDockerfileCommandHandler,
+	}
+
+	persistentFlags := cmdFromDockerfile.PersistentFlags()
+
+	PersistConfigCommandFlags(persistentFlags)
+	PersistNightlyCommandFlags(persistentFlags)
+	PersistBuildImageCommandFlags(persistentFlags)
+	PersistNanosVersionCommandFlags(persistentFlags)
+
+	persistentFlags.BoolP("quiet", "q", false, "quiet mode")
+	persistentFlags.Bool("verbose", false, "verbose mode")
+	persistentFlags.StringP("context", "", "", "build context (defaults to the directory of the dockerfile)")
+	persistentFlags.StringArrayP("build-arg", "", []string{}, "build argument, as name=value or name to take it from the environment")
+	persistentFlags.StringP("target", "", "", "stage to build in a multi-stage dockerfile")
+	persistentFlags.StringP("name", "", "", "name of the package")
+	persistentFlags.StringP("version", "", "", "version of the package")
+	persistentFlags.Bool("keep-image", false, "keep the docker image the build produces")
+	persistentFlags.Bool("resolve-entrypoint", false, "run the image to see what it starts, for an image whose entrypoint is a launcher script")
+	persistentFlags.Int("resolve-timeout", 60, "seconds to watch the image for")
+
+	return cmdFromDockerfile
+}
+
+func fromDockerfileCommandHandler(cmd *cobra.Command, args []string) {
+	flags := cmd.Flags()
+
+	c := api.NewConfig()
+
+	configFlags := NewConfigCommandFlags(flags)
+	globalFlags := NewGlobalCommandFlags(flags)
+	nightlyFlags := NewNightlyCommandFlags(flags)
+	nanosVersionFlags := NewNanosVersionCommandFlags(flags)
+	buildImageFlags := NewBuildImageCommandFlags(flags)
+
+	mergeContainer := NewMergeConfigContainer(configFlags, globalFlags, nightlyFlags, nanosVersionFlags, buildImageFlags)
+	err := mergeContainer.Merge(c)
+	if err != nil {
+		exitWithError(err.Error())
+	}
+
+	// the architecture of the package, which --arch has already had its say over
+	parch := (&PkgCommandFlags{}).Parch()
+
+	dockerfile := ""
+	if len(args) > 0 {
+		dockerfile = args[0]
+	}
+
+	quiet, _ := flags.GetBool("quiet")
+	verbose, _ := flags.GetBool("verbose")
+	keepImage, _ := flags.GetBool("keep-image")
+	resolve, _ := flags.GetBool("resolve-entrypoint")
+	resolveTimeout, _ := flags.GetInt("resolve-timeout")
+	packageName, _ := flags.GetString("name")
+	version, _ := flags.GetString("version")
+	contextDir, _ := flags.GetString("context")
+	target, _ := flags.GetString("target")
+
+	rawArgs, err := flags.GetStringArray("build-arg")
+	if err != nil {
+		exitWithError(err.Error())
+	}
+	buildArgs, err := parseBuildArgs(rawArgs)
+	if err != nil {
+		exitWithError(err.Error())
+	}
+
+	packageName, _, err = BuildFromDockerfile(DockerfileOptions{
+		Dockerfile:  dockerfile,
+		Context:     contextDir,
+		PackageName: packageName,
+		Version:     version,
+		Arch:        parch,
+		Target:      target,
+		BuildArgs:   buildArgs,
+		KeepImage:   keepImage,
+		Quiet:       quiet,
+		Verbose:     verbose,
+
+		Resolve:        resolve,
+		ResolveTimeout: time.Duration(resolveTimeout) * time.Second,
+	})
+	if err != nil {
+		exitWithError(err.Error())
+	}
+
+	fmt.Println(packageName)
+}
+
+// parseBuildArgs reads build arguments the way docker does: a name on its own takes its value
+// from the environment.
+func parseBuildArgs(args []string) (map[string]*string, error) {
+	parsed := map[string]*string{}
+
+	for _, arg := range args {
+		name, value, found := strings.Cut(arg, "=")
+		if name == "" {
+			return nil, fmt.Errorf("invalid build argument %q", arg)
+		}
+		if found {
+			v := value
+			parsed[name] = &v
+			continue
+		}
+		v, ok := os.LookupEnv(name)
+		if !ok {
+			return nil, fmt.Errorf("build argument %s is not in the environment", name)
+		}
+		parsed[name] = &v
+	}
+
+	return parsed, nil
 }
 
 func fromPackageCommand() *cobra.Command {
