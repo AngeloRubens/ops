@@ -1,5 +1,5 @@
-networking|istio/proxyv2,istio/pilot,curlimages/curl,istio/operator,amazon/aws-for-fluent-bit,traefik,amazon/cloudwatch-agent,portainer/portainer-ce,dynatrace/dynatrace-operator,docker/aci-hostnames-sidecar
-security|istio/proxyv2,istio/pilot,curlimages/curl,istio/operator,grafana/grafana,jenkins/jenkins,bitnami/postgresql,bitnami/sealed-secrets-controller,amazon/cloudwatch-agent,fluxcd/flux
+networking|istio/proxyv2:1.31.0,istio/pilot:1.31.0,curlimages/curl,istio/operator,amazon/aws-for-fluent-bit,traefik,amazon/cloudwatch-agent,portainer/portainer-ce,dynatrace/dynatrace-operator,docker/aci-hostnames-sidecar
+security|istio/proxyv2:1.31.0,istio/pilot:1.31.0,curlimages/curl,istio/operator,grafana/grafana,jenkins/jenkins,bitnami/postgresql,bitnami/sealed-secrets-controller,amazon/cloudwatch-agent,fluxcd/flux
 languages-and-frameworks|python,node,golang,ruby,php,cimg/node,maven,testcontainers/ryuk,linuxserver/bazarr,cimg/python
 integration-and-delivery|fluent/fluent-bit,containrrr/watchtower,curlimages/curl,jenkins/jenkins,grafana/loki,bitnami/postgresql,amazon/aws-for-fluent-bit,bitnami/sealed-secrets-controller,fluxcd/flux,bitnami/mongodb
 message-queues|rabbitmq,bitnami/redis,eclipse-mosquitto,nats,bitnami/redis-sentinel,bitnamicharts/redis,balabit/syslog-ng,apache/kafka,apachepulsar/pulsar,redis/redis-stack
@@ -12,5 +12,5 @@ web-servers|nginx,httpd,nginxinc/nginx-unprivileged,haproxy,linuxserver/ombi,tom
 operating-systems|busybox,alpine,ubuntu,debian,amazonlinux,cimg/node,bitnami/minideb,kindest/node,fedora,heroku/heroku
 content-management-system|wordpress,nextcloud,linuxserver/ombi,linuxserver/plex,linuxserver/sabnzbd,linuxserver/heimdall,linuxserver/lidarr,jellyfin/jellyfin,ghost,linuxserver/lazylibrarian
 databases-and-storage|memcached,postgres,redis,mysql,mongo,grafana/loki,bitnami/postgresql,bitnami/redis,mariadb,registry
-monitoring-and-observability|fluent/fluent-bit,istio/proxyv2,istio/pilot,datadog/agent,containrrr/watchtower,istio/operator,grafana/grafana,jenkins/jenkins,grafana/loki,timberio/vector
+monitoring-and-observability|fluent/fluent-bit,istio/proxyv2:1.31.0,istio/pilot:1.31.0,datadog/agent,containrrr/watchtower,istio/operator,grafana/grafana,jenkins/jenkins,grafana/loki,timberio/vector
 web-analytics|linuxserver/tautulli,tautulli/tautulli,redash/redash,sitespeedio/sitespeed.io,linuxserver/freshrss,apachepinot/pinot,mautic/mautic,listmonk/listmonk,cyfershepard/jellystat,shlinkio/shlink-web-client

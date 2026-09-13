@@ -47,13 +47,13 @@ for image in $images; do
     [ "$taken" -ge "$many" ] && break
     taken=$((taken + 1))
 
-    name="survey-$(echo "$image" | tr '/:' '--')"
+    name="survey-$(echo "$image" | tr '/:.' '---')"
     printf 'FROM %s\n' "$image" > "$work/Dockerfile"
 
     # what the image asks for in its own documentation before it will start: a password it will
     # not do without, a service to load, a command to serve rather than print its help
     configured="-"
-    config="$here/config/$(echo "$image" | tr '/:' '--')"
+    config="$here/config/$(echo "$image" | tr '/:.' '---')"
     if [ -f "$config" ]; then
         cat "$config" >> "$work/Dockerfile"
         configured="configured"
@@ -97,7 +97,15 @@ for image in $images; do
         port="$(jq -r '.RunConfig.Ports[0] // ""' "$manifest")"
 
         forward=""
-        [ -n "$port" ] && [ "$port" -gt 1024 ] 2>/dev/null && forward="-p $port"
+        if [ -n "$port" ] && [ "$port" -gt 1024 ] 2>/dev/null; then
+            forward="-p $port"
+        else
+            # ops forwards what the manifest asks for, and a port below 1024 wants a root on this
+            # side to forward it: the machine would not start at all. The console still speaks.
+            tmp="$(mktemp)"
+            jq 'del(.RunConfig.Ports, .RunConfig.UDPPorts)' "$manifest" > "$tmp" && mv "$tmp" "$manifest"
+            port=""
+        fi
 
         # shellcheck disable=SC2086
         timeout 900 "$ops" pkg load -l "$name" --accel=false $forward > "$boot" 2>&1 &
