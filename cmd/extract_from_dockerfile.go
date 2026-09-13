@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	dockerImage "github.com/docker/docker/api/types/image"
 	dockerClient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/docker/docker/pkg/stdcopy"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/term"
 
@@ -427,11 +429,11 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 		if sameArgv(argv, settled) {
 			// the same program over several turns: what the image sets up first is gone by then
 			if times++; times >= 4 {
-				return argv, environOf(pid), created.ID, nil
+				return argv, environOf(ctx, cli, created.ID, pid), created.ID, nil
 			}
 			continue
 		}
-		settled, settledEnv, times = argv, environOf(pid), 1
+		settled, settledEnv, times = argv, environOf(ctx, cli, created.ID, pid), 1
 	}
 
 	if settled != nil {
@@ -523,18 +525,32 @@ func mainProgram(top dockerContainer.TopResponse) ([]string, string) {
 	return best, bestPid
 }
 
-// environOf reads the environment a process was given. The pid docker reports is the one the
-// host knows it by, so this is a plain file to read - when it can be read: a process belonging
-// to another user keeps its environment to itself, and then what the image declares is all there
-// is. A launcher script exports as it goes, and rabbitmq will not start without the BINDIR its
-// own script sets.
-func environOf(pid string) []string {
-	raw, err := os.ReadFile(filepath.Join("/proc", pid, "environ"))
+// environOf reads the environment a process was given, which is the half of what a launcher does
+// that its command line does not show: rabbitmq will not start without the BINDIR its own script
+// exports. The pid docker reports is the one the host knows the process by, and a process
+// belonging to another user keeps its environment to itself, so when the file cannot be read
+// here it is read from inside the container, where root is root.
+func environOf(ctx context.Context, cli *dockerClient.Client, container string, pid string) []string {
+	if raw, err := os.ReadFile(filepath.Join("/proc", pid, "environ")); err == nil {
+		return environEntries(raw)
+	}
+
+	inside := containerPid(pid)
+	if inside == "" {
+		return nil
+	}
+
+	raw, err := readInContainer(ctx, cli, container, "/proc/"+inside+"/environ")
 	if err != nil {
 		return nil
 	}
 
+	return environEntries(raw)
+}
+
+func environEntries(raw []byte) []string {
 	var env []string
+
 	for _, entry := range strings.Split(string(raw), "\x00") {
 		if strings.Contains(entry, "=") {
 			env = append(env, entry)
@@ -542,6 +558,55 @@ func environOf(pid string) []string {
 	}
 
 	return env
+}
+
+// containerPid is the number the process goes by inside its own container, which is what a path
+// under /proc means to anything running in there. The kernel lists both, outermost first.
+func containerPid(pid string) string {
+	status, err := os.ReadFile(filepath.Join("/proc", pid, "status"))
+	if err != nil {
+		return ""
+	}
+
+	for _, line := range strings.Split(string(status), "\n") {
+		if !strings.HasPrefix(line, "NSpid:") {
+			continue
+		}
+		fields := strings.Fields(strings.TrimPrefix(line, "NSpid:"))
+		if len(fields) == 0 {
+			return ""
+		}
+		return fields[len(fields)-1]
+	}
+
+	return ""
+}
+
+// readInContainer reads a file from inside a running container, as root, since that is who can
+// read another user's environment.
+func readInContainer(ctx context.Context, cli *dockerClient.Client, container string,
+	path string) ([]byte, error) {
+	created, err := cli.ContainerExecCreate(ctx, container, dockerContainer.ExecOptions{
+		User:         "root",
+		Cmd:          []string{"cat", path},
+		AttachStdout: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	attached, err := cli.ContainerExecAttach(ctx, created.ID, dockerContainer.ExecAttachOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer attached.Close()
+
+	out := &bytes.Buffer{}
+	if _, err := stdcopy.StdCopy(out, io.Discard, attached.Reader); err != nil {
+		return nil, err
+	}
+
+	return out.Bytes(), nil
 }
 
 func sameArgv(a []string, b []string) bool {
