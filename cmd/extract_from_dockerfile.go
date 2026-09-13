@@ -112,7 +112,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	argv, argvErr := entrypointArgv(config.Entrypoint, config.Cmd)
 	ran := ""
 	if opts.Resolve {
-		running, id, err := resolveByRunning(ctx, cli, tag, opts.ResolveTimeout, opts.Verbose)
+		running, exported, id, err := resolveByRunning(ctx, cli, tag, opts.ResolveTimeout, opts.Verbose)
 		ran = id
 		if ran != "" {
 			defer cli.ContainerRemove(ctx, ran, dockerContainer.RemoveOptions{Force: true})
@@ -123,6 +123,8 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		} else {
 			fmt.Printf("the image starts %s\n", strings.Join(running, " "))
 			argv, argvErr = running, nil
+			// what the launcher exported on its way, which the image does not declare
+			config.Env = append(config.Env, exported...)
 		}
 	}
 	if argvErr != nil {
@@ -383,23 +385,23 @@ func exportImageFS(ctx context.Context, cli *dockerClient.Client, tag string, ra
 // the program is there to be read, with the arguments the script worked out - which is what
 // makes an image built around a launcher describable by a manifest at all.
 func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
-	timeout time.Duration, verbose bool) ([]string, string, error) {
+	timeout time.Duration, verbose bool) ([]string, []string, string, error) {
 	if timeout <= 0 {
 		timeout = time.Minute
 	}
 
 	created, err := cli.ContainerCreate(ctx, &dockerContainer.Config{Image: tag}, nil, nil, nil, "")
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 
 	if err := cli.ContainerStart(ctx, created.ID, dockerContainer.StartOptions{}); err != nil {
-		return nil, created.ID, err
+		return nil, nil, created.ID, err
 	}
 	defer cli.ContainerStop(ctx, created.ID, dockerContainer.StopOptions{})
 
 	deadline := time.Now().Add(timeout)
-	var settled []string
+	var settled, settledEnv []string
 	times := 0
 
 	for time.Now().Before(deadline) {
@@ -411,7 +413,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 			break
 		}
 
-		argv := mainProgram(top)
+		argv, pid := mainProgram(top)
 		if argv == nil {
 			continue
 		}
@@ -422,17 +424,17 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 		if sameArgv(argv, settled) {
 			// the same program over several turns: what the image sets up first is gone by then
 			if times++; times >= 4 {
-				return argv, created.ID, nil
+				return argv, environOf(pid), created.ID, nil
 			}
 			continue
 		}
-		settled, times = argv, 1
+		settled, settledEnv, times = argv, environOf(pid), 1
 	}
 
 	if settled != nil {
-		return settled, created.ID, nil
+		return settled, settledEnv, created.ID, nil
 	}
-	return nil, created.ID, fmt.Errorf("nothing but the launcher was running within %s", timeout)
+	return nil, nil, created.ID, fmt.Errorf("nothing but the launcher was running within %s", timeout)
 }
 
 // mainProgram picks what the launcher was written to start: the process nearest the top of the
@@ -440,7 +442,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 // programs below it are its own - an erlang runtime keeps a name resolver, grafana installs its
 // plugins - and the latest of those at the same remove, because a setup step run beside it
 // starts first and is gone by the time the server is up.
-func mainProgram(top dockerContainer.TopResponse) []string {
+func mainProgram(top dockerContainer.TopResponse) ([]string, string) {
 	pidAt, ppidAt, argsAt := -1, -1, -1
 	for i, title := range top.Titles {
 		switch strings.ToUpper(title) {
@@ -453,7 +455,7 @@ func mainProgram(top dockerContainer.TopResponse) []string {
 		}
 	}
 	if pidAt < 0 || ppidAt < 0 || argsAt < 0 {
-		return nil
+		return nil, ""
 	}
 
 	type process struct {
@@ -493,6 +495,7 @@ func mainProgram(top dockerContainer.TopResponse) []string {
 	}
 
 	var best []string
+	bestPid := ""
 	nearest, latest := -1, -1
 
 	for _, pid := range pids {
@@ -511,10 +514,31 @@ func mainProgram(top dockerContainer.TopResponse) []string {
 			continue
 		}
 
-		best, nearest, latest = processes[pid].argv, depth, started
+		best, bestPid, nearest, latest = processes[pid].argv, pid, depth, started
 	}
 
-	return best
+	return best, bestPid
+}
+
+// environOf reads the environment a process was given. The pid docker reports is the one the
+// host knows it by, so this is a plain file to read - when it can be read: a process belonging
+// to another user keeps its environment to itself, and then what the image declares is all there
+// is. A launcher script exports as it goes, and rabbitmq will not start without the BINDIR its
+// own script sets.
+func environOf(pid string) []string {
+	raw, err := os.ReadFile(filepath.Join("/proc", pid, "environ"))
+	if err != nil {
+		return nil
+	}
+
+	var env []string
+	for _, entry := range strings.Split(string(raw), "\x00") {
+		if strings.Contains(entry, "=") {
+			env = append(env, entry)
+		}
+	}
+
+	return env
 }
 
 func sameArgv(a []string, b []string) bool {
