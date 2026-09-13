@@ -1,0 +1,3 @@
+# A static binary on an empty base: the smallest thing a Dockerfile can describe.
+EXPECT=ok
+OUTPUT_MATCH="hello from go"

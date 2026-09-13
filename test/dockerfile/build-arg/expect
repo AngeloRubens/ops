@@ -1,0 +1,4 @@
+# A stage chosen by hand and a value handed to the build.
+EXPECT=ok
+BUILD_FLAGS="--target runtime --build-arg GREETING=hello"
+OUTPUT_MATCH="hello from the build argument"

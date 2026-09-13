@@ -1,0 +1,5 @@
+EXPECT=ok
+PORT=8000
+OUTPUT_MATCH="hello from uvicorn"
+MANIFEST_CHECK='(.Program | test("python3?[0-9.]*$")) and (.Args | index("uvicorn") != null)'
+BOOT_WAIT=300

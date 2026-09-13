@@ -1,0 +1,13 @@
+# what the prepare scripts make
+*/target/
+*/app/
+*/upstream/
+*/.build/
+*/documentation/
+*.tar.gz
+*.tgz
+coredns/coredns
+coredns/Dockerfile
+prometheus/Dockerfile
+prometheus/LICENSE
+prometheus/NOTICE

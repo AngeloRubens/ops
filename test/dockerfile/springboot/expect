@@ -1,0 +1,6 @@
+# A spring boot application: the one shape in this batch whose entrypoint is the JVM itself
+# rather than a launcher script.
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="hello from spring boot"
+MANIFEST_CHECK='.RunConfig.Ports == ["8080"] and .ManifestPassthrough.cwd == "/application"'

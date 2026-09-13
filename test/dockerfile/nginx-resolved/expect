@@ -1,0 +1,7 @@
+# nginx rewrites its own command line - ps shows "nginx: master process ..." rather than a
+# command - so what it starts cannot be read off the process tree. The refusal has to say so
+# rather than complain that a program called "nginx:" is missing.
+DOCKERFILE=../nginx/Dockerfile
+EXPECT=refuse
+ERROR_MATCH="rewrites its own command line"
+BUILD_FLAGS="--resolve-entrypoint"

@@ -1,0 +1,3 @@
+# gunicorn, the same: pip writes a console script, and a console script is a script.
+EXPECT=refuse
+ERROR_MATCH="runs a script"

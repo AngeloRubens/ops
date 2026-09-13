@@ -1,0 +1,4 @@
+# Docker wraps a shell form command in /bin/sh -c. What it wraps here is a plain command, so it
+# can be unwrapped and run directly.
+EXPECT=ok
+OUTPUT_MATCH="hello from the shell form"

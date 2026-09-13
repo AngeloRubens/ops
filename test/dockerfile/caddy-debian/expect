@@ -1,0 +1,4 @@
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="hello from caddy"
+MANIFEST_CHECK='(.Program | test("caddy$"))'

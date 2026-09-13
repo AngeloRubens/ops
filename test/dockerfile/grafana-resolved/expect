@@ -1,0 +1,8 @@
+# Asked what it starts: the grafana binary, which is one go process.
+DOCKERFILE=../grafana/Dockerfile
+EXPECT=ok
+PORT=3000
+URL_PATH="/login"
+OUTPUT_MATCH="Grafana"
+BUILD_FLAGS="--resolve-entrypoint"
+MANIFEST_CHECK='(.Program | test("grafana$"))'

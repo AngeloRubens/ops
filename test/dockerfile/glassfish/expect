@@ -1,0 +1,4 @@
+# The official Eclipse GlassFish image, unchanged, from eclipse-ee4j/glassfish.docker (8.0.4).
+# Its entrypoint is docker-entrypoint.sh and its command is startserv, both scripts.
+EXPECT=refuse
+ERROR_MATCH="runs a script"

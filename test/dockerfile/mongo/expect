@@ -1,0 +1,2 @@
+EXPECT=refuse
+ERROR_MATCH="runs a script"

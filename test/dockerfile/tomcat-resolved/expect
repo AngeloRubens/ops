@@ -1,0 +1,7 @@
+# The same tomcat image, asked what it starts. catalina.sh ends in an exec of the jvm.
+DOCKERFILE=../tomcat/Dockerfile
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="Apache Tomcat"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 120"
+MANIFEST_CHECK='(.Program | test("java$")) and (.Args | index("org.apache.catalina.startup.Bootstrap") != null)'

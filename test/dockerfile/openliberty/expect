@@ -1,0 +1,4 @@
+# The official Open Liberty image, unchanged, from OpenLiberty/ci.docker.
+DOCKERFILE=upstream/releases/latest/kernel-slim/Dockerfile.ubi10-minimal.openjdk21
+EXPECT=refuse
+ERROR_MATCH="runs a script"

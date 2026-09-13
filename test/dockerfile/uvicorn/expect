@@ -1,0 +1,4 @@
+# uvicorn installed by pip is a script with a shebang, not an executable, so the command every
+# python project writes - CMD ["uvicorn", ...] - is a launcher script like any other.
+EXPECT=refuse
+ERROR_MATCH="runs a script"

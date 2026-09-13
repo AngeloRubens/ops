@@ -1,0 +1,4 @@
+# The official tomcat image, unchanged, from docker-library/tomcat (11.0/jre21/temurin-noble).
+# Its command is catalina.sh, found along the search path the image sets.
+EXPECT=refuse
+ERROR_MATCH="runs a script"

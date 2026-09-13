@@ -1,0 +1,6 @@
+# The official Apache ActiveMQ Classic image, unchanged, from apache/activemq
+# (assembly/src/docker). It is built around a distribution the build is handed, which is what
+# prepare.sh fetches, and its entrypoint is a script.
+EXPECT=refuse
+ERROR_MATCH="runs a script"
+BUILD_FLAGS="--build-arg java_version=21 --build-arg activemq_dist=apache-activemq-6.1.4-bin.tar.gz"

@@ -1,0 +1,5 @@
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="Hello World"
+MANIFEST_CHECK='(.Program | test("dotnet$")) and .ManifestPassthrough.cwd == "/app"'
+BOOT_WAIT=300

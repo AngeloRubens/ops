@@ -1,0 +1,4 @@
+# The shape of every application server image, wildfly included: the entrypoint is a script that
+# sets things up and then execs the real program.
+EXPECT=refuse
+ERROR_MATCH="runs a script"

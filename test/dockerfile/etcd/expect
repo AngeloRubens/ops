@@ -1,0 +1,6 @@
+EXPECT=ok
+PORT=2379
+URL_PATH="/version"
+OUTPUT_MATCH="etcdserver"
+MANIFEST_CHECK='(.Program | test("etcd$"))'
+BOOT_WAIT=300

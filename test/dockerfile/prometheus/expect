@@ -1,0 +1,7 @@
+# The dockerfile prometheus publishes, unchanged, from prometheus/prometheus. A go program with
+# an exec form entrypoint: the shape that goes through without an argument.
+EXPECT=ok
+PORT=9090
+URL_PATH="/-/healthy"
+OUTPUT_MATCH="Healthy"
+MANIFEST_CHECK='.Program == "/bin/prometheus" and .RunConfig.Ports == ["9090"] and .ManifestPassthrough.cwd == "/prometheus"'

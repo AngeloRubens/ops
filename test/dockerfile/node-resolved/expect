@@ -1,0 +1,7 @@
+# The same node image, asked what it starts: docker-entrypoint.sh ends in an exec of node.
+DOCKERFILE=../node/Dockerfile
+EXPECT=ok
+PORT=3000
+OUTPUT_MATCH="ciao from node"
+BUILD_FLAGS="--resolve-entrypoint"
+MANIFEST_CHECK='(.Program | test("node$")) and (.Args | index("server.js") != null)'

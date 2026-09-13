@@ -1,0 +1,4 @@
+# The official traefik image, unchanged: a go program, but started by a shell script.
+DOCKERFILE=upstream/v3.7/alpine/Dockerfile
+EXPECT=refuse
+ERROR_MATCH="runs a script"

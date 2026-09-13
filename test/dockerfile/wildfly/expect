@@ -1,0 +1,3 @@
+# The real thing, to see how far it gets and what it says when it stops.
+EXPECT=refuse
+ERROR_MATCH="runs a script"

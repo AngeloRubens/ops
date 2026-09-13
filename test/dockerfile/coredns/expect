@@ -1,0 +1,4 @@
+# The dockerfile coredns publishes, unchanged: a distroless base, a static binary and an exec
+# form entrypoint. It wants a Corefile to serve anything, so the package is as far as this goes.
+EXPECT=package
+MANIFEST_CHECK='.Program == "/coredns" and .Args == ["/coredns"]'

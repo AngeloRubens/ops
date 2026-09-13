@@ -1,0 +1,5 @@
+# The official Apache TomEE image, unchanged, from tomitribe/docker-tomee, which is the repository
+# the docker official images library builds it from.
+DOCKERFILE=upstream/TomEE-11.0/jre25/Temurin/ubuntu/microprofile/Dockerfile
+EXPECT=refuse
+ERROR_MATCH="runs a script"
