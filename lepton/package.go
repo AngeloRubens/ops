@@ -379,7 +379,12 @@ func ExtractPackage(archive, dest string, config *types.Config) {
 				}
 			}
 		case tar.TypeReg:
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			// A package is free to carry a file that is read only - a jdk carries its class
+			// data archive that way - and one already lying there from an earlier extraction
+			// cannot be opened to be written over.
+			os.Chmod(target, 0600)
+
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode)|0600)
 			if err != nil {
 				fmt.Printf("Failed open file %s, error is %s", target, err)
 				os.Exit(1)
