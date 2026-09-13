@@ -1,0 +1,80 @@
+name: What becomes of docker hub
+
+# Takes the three most pulled images of every docker hub category, straight from the hub's own
+# search, turns each into a unikernel and sees whether it runs. One job per category; the table
+# is the collected output.
+
+on:
+  push:
+    branches: [survey/hub-categories]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build ops
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build -o ops -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ops
+          path: ops
+
+  category:
+    name: ${{ matrix.category }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        category:
+          - networking
+          - security
+          - languages-and-frameworks
+          - integration-and-delivery
+          - message-queues
+          - api-management
+          - internet-of-things
+          - machine-learning-and-ai
+          - developer-tools
+          - data-science
+          - web-servers
+          - operating-systems
+          - content-management-system
+          - databases-and-storage
+          - monitoring-and-observability
+          - web-analytics
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ops
+
+      - name: Install qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86
+
+      - name: Make room
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - name: Ask the category
+        run: |
+          chmod +x ops survey/run-category.sh
+          export OPS="$PWD/ops"
+          ./survey/run-category.sh ${{ matrix.category }} 3 | tee "${{ matrix.category }}.tsv"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: survey-${{ matrix.category }}
+          path: ${{ matrix.category }}.tsv
