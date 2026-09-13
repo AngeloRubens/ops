@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -227,6 +228,17 @@ func TestMainProgramHasNothingToTakeFromAShell(t *testing.T) {
 	argv, _ := mainProgram(top)
 
 	assert.Nil(t, argv)
+}
+
+func TestStatusFieldReadsTheNumbersTheKernelKeeps(t *testing.T) {
+	// what the kernel keeps about this very process, which is the only one whose numbers are
+	// known here for certain
+	pid := fmt.Sprint(os.Getpid())
+
+	assert.Equal(t, fmt.Sprint(os.Getuid()), statusField(pid, "Uid:", 0))
+	assert.Equal(t, fmt.Sprint(os.Geteuid()), statusField(pid, "Uid:", 1))
+	assert.Equal(t, pid, statusField(pid, "NSpid:", -1))
+	assert.Equal(t, "", statusField(pid, "NoSuchThing:", 0))
 }
 
 func TestExposedPortsSplitsTheProtocols(t *testing.T) {
