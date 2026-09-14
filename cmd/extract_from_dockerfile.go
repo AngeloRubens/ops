@@ -582,7 +582,7 @@ func environOf(ctx context.Context, cli *dockerClient.Client, container string, 
 			return environEntries(raw)
 		}
 		if verbose {
-			fmt.Printf("reading /proc/%s/environ inside the container: %v\n", inside, err)
+			fmt.Printf("reading the launcher's environment inside the container: %v\n", err)
 		}
 	} else if verbose {
 		fmt.Printf("the container's own number for %s is not to be had\n", pid)
@@ -593,7 +593,7 @@ func environOf(ctx context.Context, cli *dockerClient.Client, container string, 
 	raw, err := readInContainer(ctx, cli, container, "/proc/1/environ")
 	if err != nil {
 		if verbose {
-			fmt.Printf("reading /proc/1/environ inside the container: %v\n", err)
+			fmt.Printf("reading the first process's environment inside the container: %v\n", err)
 		}
 		return nil
 	}
@@ -665,6 +665,7 @@ func readInContainer(ctx context.Context, cli *dockerClient.Client, container st
 		User:         "root",
 		Cmd:          []string{"cat", path},
 		AttachStdout: true,
+		AttachStderr: true,
 	})
 	if err != nil {
 		return nil, err
