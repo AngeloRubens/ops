@@ -18,7 +18,7 @@ jobs:
       matrix:
         include:
           - image: postgres
-            klibs: '"shmem"'
+            klibs: '"tmpfs","shmem"'
             port: 5432
             says: "database system is ready to accept connections"
             declines: "root.*execution of the PostgreSQL server is not permitted"
