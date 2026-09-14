@@ -676,9 +676,19 @@ func readInContainer(ctx context.Context, cli *dockerClient.Client, container st
 	}
 	defer attached.Close()
 
-	out := &bytes.Buffer{}
-	if _, err := stdcopy.StdCopy(out, io.Discard, attached.Reader); err != nil {
+	out, said := &bytes.Buffer{}, &bytes.Buffer{}
+	if _, err := stdcopy.StdCopy(out, said, attached.Reader); err != nil {
 		return nil, err
+	}
+
+	if out.Len() == 0 {
+		// an exec that runs and brings nothing back has something to say about why
+		status, err := cli.ContainerExecInspect(ctx, created.ID)
+		if err == nil {
+			return nil, fmt.Errorf("%s came back empty, exit %d: %s", path, status.ExitCode,
+				strings.TrimSpace(said.String()))
+		}
+		return nil, fmt.Errorf("%s came back empty: %s", path, strings.TrimSpace(said.String()))
 	}
 
 	return out.Bytes(), nil
