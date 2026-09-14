@@ -25,14 +25,13 @@ jobs:
           - image: memcached
             klibs: ''
             port: 11211
+            says: "server listening"
+            declines: "must add '-u root' to start as root"
           - image: rabbitmq
             klibs: '"tmpfs","shmem"'
             port: 5672
             says: "Server startup complete"
             declines: "BINDIR is not set"
-            says: "server listening"
-            declines: "must add '-u root' to start as root"
-    name: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@v4
 
