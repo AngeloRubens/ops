@@ -18,10 +18,12 @@ jobs:
       matrix:
         include:
           - image: postgres
+            klibs: '"shmem"'
             port: 5432
             says: "database system is ready to accept connections"
             declines: "root.*execution of the PostgreSQL server is not permitted"
           - image: memcached
+            klibs: ''
             port: 11211
             says: "server listening"
             declines: "must add '-u root' to start as root"
@@ -45,7 +47,10 @@ jobs:
             https://github.com/AngeloRubens/nanos.git nanos
           make -C nanos -j"$(nproc)" kernel PLATFORM=pc 2>&1 | tail -3
           ls -l nanos/output/platform/pc/bin/kernel.img
-          printf '{"Kernel":"%s/nanos/output/platform/pc/bin/kernel.img"}\n' "$PWD" > patched.json
+          # the klibs have to be the ones built beside that kernel, and a program may need one:
+          # system v shared memory lives in shmem, and postgres keeps a small segment there
+          printf '{"Kernel":"%s/nanos/output/platform/pc/bin/kernel.img",' "$PWD" > patched.json
+          printf '"KlibDir":"%s/nanos/output/platform/pc/bin","Klibs":[%s]}\n' "$PWD" '${{ matrix.klibs }}' >> patched.json
           cat patched.json
 
       - name: Make the package, and see who it says the program runs as
