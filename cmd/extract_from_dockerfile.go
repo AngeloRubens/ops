@@ -459,7 +459,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 			// the same program over several turns: what the image sets up first is gone by then
 			if times++; times >= 4 {
 				found.argv = argv
-				found.env = environOf(ctx, cli, created.ID, pid)
+				found.env = environOf(ctx, cli, created.ID, pid, verbose)
 				found.uid, found.gid = whoIsRunning(pid)
 				return found, nil
 			}
@@ -468,7 +468,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 
 		settled, times = argv, 1
 		found.argv = argv
-		found.env = environOf(ctx, cli, created.ID, pid)
+		found.env = environOf(ctx, cli, created.ID, pid, verbose)
 		found.uid, found.gid = whoIsRunning(pid)
 	}
 
@@ -567,18 +567,34 @@ func mainProgram(top dockerContainer.TopResponse) ([]string, string) {
 // exports. The pid docker reports is the one the host knows the process by, and a process
 // belonging to another user keeps its environment to itself, so when the file cannot be read
 // here it is read from inside the container, where root is root.
-func environOf(ctx context.Context, cli *dockerClient.Client, container string, pid string) []string {
+func environOf(ctx context.Context, cli *dockerClient.Client, container string, pid string,
+	verbose bool) []string {
 	if raw, err := os.ReadFile(filepath.Join("/proc", pid, "environ")); err == nil {
 		return environEntries(raw)
+	} else if verbose {
+		fmt.Printf("reading the environment of %s: %v\n", pid, err)
 	}
 
-	inside := containerPid(pid)
-	if inside == "" {
-		return nil
+	// The number the container knows it by, when the host will say what that is.
+	if inside := containerPid(pid); inside != "" {
+		raw, err := readInContainer(ctx, cli, container, "/proc/"+inside+"/environ")
+		if err == nil {
+			return environEntries(raw)
+		}
+		if verbose {
+			fmt.Printf("reading /proc/%s/environ inside the container: %v\n", inside, err)
+		}
+	} else if verbose {
+		fmt.Printf("the container's own number for %s is not to be had\n", pid)
 	}
 
-	raw, err := readInContainer(ctx, cli, container, "/proc/"+inside+"/environ")
+	// A launcher that hands over with an exec leaves the program as the first process of the
+	// container, and that one is always there to be read.
+	raw, err := readInContainer(ctx, cli, container, "/proc/1/environ")
 	if err != nil {
+		if verbose {
+			fmt.Printf("reading /proc/1/environ inside the container: %v\n", err)
+		}
 		return nil
 	}
 
