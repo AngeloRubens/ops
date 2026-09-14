@@ -61,7 +61,7 @@ jobs:
         run: |
           export OPS="$PWD/ops"
           ./ops pkg from-dockerfile test/uid/${{ matrix.image }}.Dockerfile \
-            --name uid-${{ matrix.image }} --resolve-entrypoint --resolve-timeout 180 2>&1 | tee resolve.log
+            --name uid-${{ matrix.image }} --resolve-entrypoint --resolve-timeout 180 --verbose 2>&1 | tee resolve.log
           grep -i "could not read the environment" resolve.log && \
             echo "::warning::the launcher's environment was not read" || true
           manifest="$HOME/.ops/local_packages/amd64/uid-${{ matrix.image }}/package.manifest"
