@@ -1,7 +1,6 @@
 # Asked what it starts: mysqld, which is threaded rather than forked. Asking also runs the
 # entrypoint, so the data directory it initialises is in the file system the package carries -
 # without that the server would come up to an empty data directory and stop.
-DOCKERFILE=../mysql/Dockerfile
 EXPECT=ok
 OUTPUT_MATCH="ready for connections"
 BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 240"

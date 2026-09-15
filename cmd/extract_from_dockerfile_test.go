@@ -217,6 +217,33 @@ func TestMainProgramSeesPastASupervisor(t *testing.T) {
 	assert.Equal(t, "/usr/bin/python3", argv[0])
 }
 
+func TestMainProgramTakesTheServerALauncherStarts(t *testing.T) {
+	// glassfish's asadmin is a jvm that starts the server's jvm and waits on it
+	top := dockerContainer.TopResponse{
+		Titles: []string{"PID", "PPID", "ARGS"},
+		Processes: [][]string{
+			{"1", "0", "/bin/bash /usr/local/bin/docker-entrypoint.sh startserv"},
+			{"20", "1", "/opt/java/openjdk/bin/java -jar /opt/gfinstall/glassfish/lib/client/appserver-cli.jar start-domain"},
+			{"45", "20", "/opt/java/openjdk/bin/java -cp glassfish.jar com.sun.enterprise.glassfish.bootstrap.ASMain"},
+		},
+	}
+
+	argv, pid := mainProgram(top)
+
+	assert.Equal(t, "45", pid)
+	assert.Contains(t, argv, "com.sun.enterprise.glassfish.bootstrap.ASMain")
+}
+
+func TestListeningInReadsTheSocketsTheKernelKeeps(t *testing.T) {
+	header := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+	listening := header + "   0: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 12345\n"
+	connected := header + "   1: 0100007F:8C3E 0100007F:1F90 01 00000000:00000000 00:00000000 00000000     0        0 12346\n"
+
+	assert.True(t, listeningIn([]byte(listening)))
+	assert.False(t, listeningIn([]byte(connected)))
+	assert.False(t, listeningIn(nil))
+}
+
 func TestMainProgramHasNothingToTakeFromAShell(t *testing.T) {
 	top := dockerContainer.TopResponse{
 		Titles: []string{"PID", "PPID", "ARGS"},

@@ -189,6 +189,10 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		c.Env["PWD"] = wd
 	}
 
+	// An image is built for linux, and a program may check that that is where it runs: java 8 stops
+	// with "Platform not recognized" when uname says Nanos.
+	c.ManifestPassthrough["uname"] = map[string]any{"sysname": "Linux"}
+
 	// who the program ran as, for the programs that will not be root
 	if runsAs != "" && runsAs != "0" {
 		c.ManifestPassthrough["uid"] = runsAs
@@ -467,8 +471,11 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 		}
 
 		if sameArgv(argv, settled) {
-			// the same program over several turns: what the image sets up first is gone by then
-			if times++; times >= 4 {
+			// The same program over several turns: what the image sets up first is gone by then.
+			// A step that prepares the server can run that long too - keycloak builds itself in a
+			// jvm that then exits - so it is the program listening on a port that is taken, and one
+			// that never does is watched until the time is up.
+			if times++; times >= 4 && listens(pid) {
 				found.argv = exactArgv(pid, argv)
 				found.uid, found.gid = whoIsRunning(pid)
 				found.env = environOf(ctx, cli, created.ID, pid, found.uid, verbose)
@@ -486,10 +493,38 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 	}
 
 	if found.argv != nil {
+		// what the program has loaded by the time it is taken, rather than when it first appeared
+		if top, err := cli.ContainerTop(ctx, created.ID, []string{"-eo", "pid,ppid,args"}); err == nil {
+			if mapped := mappedBy(ctx, cli, created.ID, top, verbose); len(mapped) > 0 {
+				found.mapped = mapped
+			}
+		}
 		return found, nil
 	}
 
 	return found, fmt.Errorf("nothing but the launcher was running within %s", timeout)
+}
+
+// listens reports whether anything in the network namespace of a process listens on a tcp port,
+// which is how a server says it is up and what a step that only prepares one does not do.
+func listens(pid string) bool {
+	for _, table := range []string{"tcp", "tcp6"} {
+		raw, err := os.ReadFile(filepath.Join("/proc", pid, "net", table))
+		if err == nil && listeningIn(raw) {
+			return true
+		}
+	}
+	return false
+}
+
+// listeningIn reads a socket table the kernel keeps, where a socket in the LISTEN state is 0A.
+func listeningIn(table []byte) bool {
+	for _, line := range strings.Split(string(table), "\n") {
+		if fields := strings.Fields(line); len(fields) > 3 && fields[3] == "0A" {
+			return true
+		}
+	}
+	return false
 }
 
 // mainProgram picks what the launcher was written to start: the process nearest the top of the
@@ -570,6 +605,24 @@ func mainProgram(top dockerContainer.TopResponse) ([]string, string) {
 		}
 
 		best, bestPid, nearest, latest = processes[pid].argv, pid, depth, started
+	}
+
+	// A launcher can be the same program as what it launches: glassfish's asadmin is a jvm that
+	// starts the server's jvm and waits on it, and nanos has no way to start the second. So a child
+	// running the same program is the one to take.
+	for hops := 0; best != nil && hops < 8; hops++ {
+		var child []string
+		childPid := ""
+		for _, pid := range pids {
+			p := processes[pid]
+			if p.ppid == bestPid && filepath.Base(p.argv[0]) == filepath.Base(best[0]) {
+				child, childPid = p.argv, pid
+			}
+		}
+		if child == nil {
+			break
+		}
+		best, bestPid = child, childPid
 	}
 
 	return best, bestPid
@@ -751,7 +804,8 @@ func sameArgv(a []string, b []string) bool {
 // so what they know is of no use to anyone.
 var discardable = []string{
 	"usr/share/man", "usr/share/info", "usr/share/doc/.build-id", "usr/share/gtk-doc",
-	"usr/share/locale", "var/cache", "var/lib/apt/lists", "var/lib/dpkg/info", "var/lib/rpm",
+	"usr/share/locale", "var/cache/apt", "var/cache/apk", "var/cache/dnf", "var/cache/yum",
+	"var/cache/debconf", "var/lib/apt/lists", "var/lib/dpkg/info", "var/lib/rpm",
 }
 
 func discardWhatCannotBeReached(sysroot string) {
