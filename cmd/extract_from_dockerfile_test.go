@@ -387,7 +387,7 @@ Architecture: amd64
 }
 
 func TestPackageOwnersReadsWhatDpkgInstalled(t *testing.T) {
-	owners := packageOwners(debianForTest(t), nil)
+	owners := packageOwners(debianForTest(t))
 
 	assert.Equal(t, "glibc", owners["/usr/lib/libc.so.6"])
 	assert.Equal(t, "glibc", owners["/usr/bin/ldd"])
@@ -405,7 +405,7 @@ func TestPackageOwnersReadsWhatApkInstalled(t *testing.T) {
 		"C:Q1abc=\nP:musl\nV:1.2.5-r0\no:musl\nF:lib\nR:ld-musl-x86_64.so.1\n\n"+
 			"P:busybox-binsh\nV:1.36.1-r29\no:busybox\nF:bin\nR:sh\nF:usr/bin\nR:env\n")
 
-	owners := packageOwners(root, nil)
+	owners := packageOwners(root)
 
 	assert.Equal(t, "musl", owners["/lib/ld-musl-x86_64.so.1"])
 	assert.Equal(t, "busybox", owners["/bin/sh"])
@@ -418,7 +418,7 @@ func TestPackageOwnersReadsADistrolessDatabase(t *testing.T) {
 	writeForTest(t, root, "var/lib/dpkg/status.d/libssl3.md5sums",
 		"0123456789abcdef  usr/lib/x86_64-linux-gnu/libssl.so.3\n")
 
-	owners := packageOwners(root, nil)
+	owners := packageOwners(root)
 
 	assert.Equal(t, "openssl", owners["/usr/lib/x86_64-linux-gnu/libssl.so.3"])
 }
@@ -431,7 +431,7 @@ func existsForTest(root string, p string) bool {
 func TestLeaveOutTheOperatingSystemKeepsWhatThePackagesDidNotInstall(t *testing.T) {
 	root := debianForTest(t)
 
-	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", []string{"/lib/libc.so.6"}, nil, nil)
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", []string{"/lib/libc.so.6"}, nil)
 
 	assert.True(t, existsForTest(root, "opt/java/bin/java"), "what the image put there itself")
 	assert.True(t, existsForTest(root, "usr/lib/libc.so.6"), "what the program reaches")
@@ -446,7 +446,7 @@ func TestLeaveOutTheOperatingSystemKeepsWhatThePackagesDidNotInstall(t *testing.
 func TestLeaveOutTheOperatingSystemKeepsThePackageOfTheProgram(t *testing.T) {
 	root := debianForTest(t)
 
-	leaveOutTheOperatingSystem(root, "/usr/bin/perl", nil, nil, nil)
+	leaveOutTheOperatingSystem(root, "/usr/bin/perl", nil, nil)
 
 	assert.True(t, existsForTest(root, "usr/bin/perl"))
 	assert.True(t, existsForTest(root, "usr/share/perl/strict.pm"), "what the program reads by name")
@@ -458,27 +458,17 @@ func TestLeaveOutTheOperatingSystemKeepsEverythingWithoutADatabase(t *testing.T)
 	root := t.TempDir()
 	writeForTest(t, root, "usr/bin/perl", "perl")
 
-	leaveOutTheOperatingSystem(root, "/opt/app", nil, nil, nil)
+	leaveOutTheOperatingSystem(root, "/opt/app", nil, nil)
 
 	_, err := os.Stat(filepath.Join(root, "usr", "bin", "perl"))
 	assert.NoError(t, err)
 }
 
-func TestPackageOwnersReadsWhatRpmSaid(t *testing.T) {
+func TestPackageOwnersCarriesAnImageWhoseRpmDatabaseCannotBeRead(t *testing.T) {
 	root := t.TempDir()
-	assert.NoError(t, os.MkdirAll(filepath.Join(root, "usr", "lib64"), 0755))
-	assert.NoError(t, os.Symlink("usr/lib64", filepath.Join(root, "lib64")))
+	writeForTest(t, root, "var/lib/rpm/rpmdb.sqlite", "not a database at all")
 
-	said := "/lib64/ld-linux-x86-64.so.2\tglibc-2.34-100.el9.src.rpm\tglibc\n" +
-		"/usr/lib64/libc.so.6\tglibc-2.34-100.el9.src.rpm\tglibc\n" +
-		"/usr/lib/jvm/java-21-openjdk/bin/java\tjava-21-openjdk-21.0.4.0.7-2.el9.src.rpm\tjava-21-openjdk-headless\n" +
-		"(contains no files)\n"
-
-	owners := packageOwners(root, []byte(said))
-
-	assert.Equal(t, "glibc", owners["/usr/lib64/ld-linux-x86-64.so.2"])
-	assert.Equal(t, "glibc", owners["/usr/lib64/libc.so.6"])
-	assert.Equal(t, "java-21-openjdk", owners["/usr/lib/jvm/java-21-openjdk/bin/java"])
+	assert.Empty(t, packageOwners(root))
 }
 
 func TestRpmSourceTakesTheVersionOff(t *testing.T) {

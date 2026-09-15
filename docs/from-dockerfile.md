@@ -45,9 +45,10 @@ a distroless image keeps, alpine's, or rpm's.
 A library a program opens itself rather than links against - .NET opens ICU and OpenSSL, glibc
 opens libgcc_s - is found by the name the program spells out, and stays the same way.
 
-An image that keeps its packages with rpm - ubi, oracle linux, fedora - is asked what it installed
-through its own rpm, since the database is rpm's to read. One with no rpm to ask is carried whole,
-and says so. `--whole-image` carries any image whole.
+An image that keeps its packages with rpm - ubi, oracle linux, fedora - has its database read
+whether or not rpm itself is in the image, as it is not in ubi-micro: sqlite, berkeley db and ndb
+alike. A database that cannot be read has the image carried whole, and says so. `--whole-image`
+carries any image whole.
 
 The program keeps the place it has in the image rather than being copied to the root of the
 package, so a runtime that finds its home from the path of its own binary still finds it. The file
