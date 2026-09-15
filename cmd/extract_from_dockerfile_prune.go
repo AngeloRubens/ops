@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"debug/elf"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	dockerContainer "github.com/docker/docker/api/types/container"
 	dockerClient "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 // An image carries the distribution it was built on, and a unikernel is meant to carry what its
@@ -34,14 +36,12 @@ var alwaysKept = []string{
 }
 
 // leaveOutTheOperatingSystem takes out of sysroot what the distribution installed and the program
-// does not reach. mapped is what the processes of the image had mapped when it was run.
-func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string, env []string) {
-	owners := packageOwners(sysroot)
+// does not reach. mapped is what the processes of the image had mapped when it was run, and rpm is
+// what the image's own rpm said it installed, for an image that keeps its packages that way.
+func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string, env []string,
+	rpm []byte) {
+	owners := packageOwners(sysroot, rpm)
 	if len(owners) == 0 {
-		if hasRpmDatabase(sysroot) {
-			fmt.Println("warning: the image keeps its packages in an rpm database, which is not " +
-				"read here, so the whole of its operating system is carried")
-		}
 		return
 	}
 
@@ -145,16 +145,95 @@ func underAny(p string, trees []string) bool {
 
 // packageOwners maps each file a distribution package installed to the source package it was
 // built from, which is the name a debian package database gives as Source and an alpine one as
-// origin.
-func packageOwners(sysroot string) map[string]string {
+// origin, and an rpm names in its SOURCERPM.
+func packageOwners(sysroot string, rpm []byte) map[string]string {
 	owners := map[string]string{}
 	in := &rootPaths{sysroot: sysroot, dirs: map[string]string{}}
 
 	readDpkg(sysroot, in, owners)
 	readDistroless(sysroot, in, owners)
 	readApk(sysroot, in, owners)
+	readRpm(rpm, in, owners)
 
 	return owners
+}
+
+// rpmQuery has rpm say every file it installed, one to a line, with the source package it was built
+// from and the name of its own package beside it.
+const rpmQuery = "[%{FILENAMES}\t%{SOURCERPM}\t%{NAME}\n]"
+
+// askRpm asks the image's own rpm what it installed. The database is a file of rpm's making -
+// sqlite on a recent red hat, berkeley db on an older one - and rpm is what reads it.
+func askRpm(ctx context.Context, cli *dockerClient.Client, tag string) ([]byte, error) {
+	created, err := cli.ContainerCreate(ctx, &dockerContainer.Config{
+		Image:           tag,
+		User:            "0",
+		Entrypoint:      []string{"rpm"},
+		Cmd:             []string{"--query", "--all", "--queryformat", rpmQuery},
+		NetworkDisabled: true,
+	}, nil, nil, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	defer cli.ContainerRemove(ctx, created.ID, dockerContainer.RemoveOptions{Force: true})
+
+	if err := cli.ContainerStart(ctx, created.ID, dockerContainer.StartOptions{}); err != nil {
+		return nil, err
+	}
+
+	var exit int64
+	waited, failed := cli.ContainerWait(ctx, created.ID, dockerContainer.WaitConditionNotRunning)
+	select {
+	case err := <-failed:
+		return nil, err
+	case status := <-waited:
+		exit = status.StatusCode
+	}
+
+	logs, err := cli.ContainerLogs(ctx, created.ID, dockerContainer.LogsOptions{ShowStdout: true, ShowStderr: true})
+	if err != nil {
+		return nil, err
+	}
+	defer logs.Close()
+
+	out, said := &bytes.Buffer{}, &bytes.Buffer{}
+	if _, err := stdcopy.StdCopy(out, said, logs); err != nil {
+		return nil, err
+	}
+	if exit != 0 {
+		return nil, fmt.Errorf("rpm exited %d: %s", exit, strings.TrimSpace(said.String()))
+	}
+
+	return out.Bytes(), nil
+}
+
+func readRpm(raw []byte, in *rootPaths, owners map[string]string) {
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 3 {
+			continue
+		}
+		own(owners, in, fields[:1], rpmSource(fields[1], fields[2]))
+	}
+}
+
+// rpmSource is the name of the source package rpm names as glibc-2.34-100.el9.src.rpm: what is
+// left once the version and the release are taken off. A package with no source is its own.
+func rpmSource(sourcerpm string, name string) string {
+	source := strings.TrimSuffix(sourcerpm, ".src.rpm")
+	if source == sourcerpm {
+		return name
+	}
+
+	for i := 0; i < 2; i++ {
+		at := strings.LastIndex(source, "-")
+		if at <= 0 {
+			return name
+		}
+		source = source[:at]
+	}
+
+	return source
 }
 
 // rootPaths places a path a package database names where it lies in the sysroot. A database says
