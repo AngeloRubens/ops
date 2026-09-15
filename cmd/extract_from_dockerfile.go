@@ -459,8 +459,8 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 			// the same program over several turns: what the image sets up first is gone by then
 			if times++; times >= 4 {
 				found.argv = argv
-				found.env = environOf(ctx, cli, created.ID, pid)
 				found.uid, found.gid = whoIsRunning(pid)
+				found.env = environOf(ctx, cli, created.ID, pid, found.uid, verbose)
 				return found, nil
 			}
 			continue
@@ -468,8 +468,8 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 
 		settled, times = argv, 1
 		found.argv = argv
-		found.env = environOf(ctx, cli, created.ID, pid)
 		found.uid, found.gid = whoIsRunning(pid)
+		found.env = environOf(ctx, cli, created.ID, pid, found.uid, verbose)
 	}
 
 	if found.argv != nil {
@@ -567,18 +567,38 @@ func mainProgram(top dockerContainer.TopResponse) ([]string, string) {
 // exports. The pid docker reports is the one the host knows the process by, and a process
 // belonging to another user keeps its environment to itself, so when the file cannot be read
 // here it is read from inside the container, where root is root.
-func environOf(ctx context.Context, cli *dockerClient.Client, container string, pid string) []string {
+// A process's environment is readable by whoever runs it: the kernel puts the same check on it
+// that it puts on ptrace, so root without CAP_SYS_PTRACE, which is not among the capabilities a
+// container is given, is turned away from a program that runs as anyone else. The user the
+// program runs as is the one who can read it.
+func environOf(ctx context.Context, cli *dockerClient.Client, container string, pid string,
+	as string, verbose bool) []string {
 	if raw, err := os.ReadFile(filepath.Join("/proc", pid, "environ")); err == nil {
 		return environEntries(raw)
+	} else if verbose {
+		fmt.Printf("reading the environment of %s: %v\n", pid, err)
 	}
 
-	inside := containerPid(pid)
-	if inside == "" {
-		return nil
+	// The number the container knows it by, when the host will say what that is.
+	if inside := containerPid(pid); inside != "" {
+		raw, err := readInContainer(ctx, cli, container, "/proc/"+inside+"/environ", as)
+		if err == nil {
+			return environEntries(raw)
+		}
+		if verbose {
+			fmt.Printf("reading the launcher's environment inside the container: %v\n", err)
+		}
+	} else if verbose {
+		fmt.Printf("the container's own number for %s is not to be had\n", pid)
 	}
 
-	raw, err := readInContainer(ctx, cli, container, "/proc/"+inside+"/environ")
+	// A launcher that hands over with an exec leaves the program as the first process of the
+	// container, and that one is always there to be read.
+	raw, err := readInContainer(ctx, cli, container, "/proc/1/environ", as)
 	if err != nil {
+		if verbose {
+			fmt.Printf("reading the first process's environment inside the container: %v\n", err)
+		}
 		return nil
 	}
 
@@ -644,11 +664,15 @@ func statusField(pid string, name string, at int) string {
 // readInContainer reads a file from inside a running container, as root, since that is who can
 // read another user's environment.
 func readInContainer(ctx context.Context, cli *dockerClient.Client, container string,
-	path string) ([]byte, error) {
+	path string, as string) ([]byte, error) {
+	if as == "" {
+		as = "root"
+	}
 	created, err := cli.ContainerExecCreate(ctx, container, dockerContainer.ExecOptions{
-		User:         "root",
+		User:         as,
 		Cmd:          []string{"cat", path},
 		AttachStdout: true,
+		AttachStderr: true,
 	})
 	if err != nil {
 		return nil, err
@@ -660,9 +684,19 @@ func readInContainer(ctx context.Context, cli *dockerClient.Client, container st
 	}
 	defer attached.Close()
 
-	out := &bytes.Buffer{}
-	if _, err := stdcopy.StdCopy(out, io.Discard, attached.Reader); err != nil {
+	out, said := &bytes.Buffer{}, &bytes.Buffer{}
+	if _, err := stdcopy.StdCopy(out, said, attached.Reader); err != nil {
 		return nil, err
+	}
+
+	if out.Len() == 0 {
+		// an exec that runs and brings nothing back has something to say about why
+		status, err := cli.ContainerExecInspect(ctx, created.ID)
+		if err == nil {
+			return nil, fmt.Errorf("%s came back empty, exit %d: %s", path, status.ExitCode,
+				strings.TrimSpace(said.String()))
+		}
+		return nil, fmt.Errorf("%s came back empty: %s", path, strings.TrimSpace(said.String()))
 	}
 
 	return out.Bytes(), nil
