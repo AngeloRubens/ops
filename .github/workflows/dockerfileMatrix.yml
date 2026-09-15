@@ -36,7 +36,7 @@ jobs:
       # the tests this change adds, by name: the ones already in cmd build images and want
       # a hypervisor on the path, which is a state of that package rather than of this change
       - name: test
-        run: go test ./cmd/... -count 1 -run 'EntrypointArgv|ResolveInRoot|ResolveProgram|MainProgram|ExposedPorts|Environment|WriteHosts|VolumeSize|IsKernelPath|ResolveBuildContext|StatusField|WalkInRoot|PackageOwners|LeaveOutTheOperatingSystem|LibraryDirs|FindLibrary|MappedPaths|NamedIn|OpenedByName|RpmSource|NssServices'
+        run: go test ./cmd/... -count 1 -run 'EntrypointArgv|ResolveInRoot|ResolveProgram|MainProgram|ExposedPorts|Environment|WriteHosts|VolumeSize|IsKernelPath|ResolveBuildContext|StatusField|WalkInRoot|PackageOwners|LeaveOutTheOperatingSystem|LibraryDirs|FindLibrary|MappedPaths|NamedIn|OpenedByName|RpmSource|NssServices|ExactArgv'
 
       - name: build
         run: go build -o ops -v
@@ -94,6 +94,10 @@ jobs:
           - rocketmq-resolved
           - traefik-resolved
           - mongo-resolved
+          - payara-resolved
+          - memcached-resolved
+          - wordpress-resolved
+          - nginx-single
           # the same images, asked what they start instead of read
           - wildfly-resolved
           - wildfly-interpreted
@@ -143,6 +147,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86
+          # a server on port 80 - nginx, apache - is forwarded from the same port on this side, and
+          # a port below 1024 is otherwise root's to open
+          sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
 
       - name: Run the scenario
         run: |

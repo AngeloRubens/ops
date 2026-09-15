@@ -1,0 +1,8 @@
+# Payara, asked what tini and its entrypoint start rather than read: the shell form that stops the
+# plain scenario is run by the image itself, and what it ends in is a jvm.
+DOCKERFILE=../payara/Dockerfile
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="Payara"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
+BOOT_WAIT=900
