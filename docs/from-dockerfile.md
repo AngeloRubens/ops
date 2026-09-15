@@ -44,13 +44,13 @@ directory - has that work in the package rather than still ahead of it.
 
 Each of these is the image of a real thing, taken from the repository that publishes it and left
 alone. The flags column is the whole of what was added to `ops pkg from-dockerfile ./Dockerfile`.
+Every row is a machine that booted and was asked for something, not a package that was only made.
 
 | image | flags | what comes out |
 |---|---|---|
 | prometheus | | a machine that answers `/-/healthy` |
 | etcd | | a machine that serves `/version` and keeps its write ahead log |
-| coredns | | a package, from a distroless base and a static binary |
-| traefik | | a package |
+| influxdb | | a machine that answers on 8086 |
 | caddy | | a machine that serves its pages |
 | dotnet, aspnet | | a machine that answers on 8080 |
 | spring boot | | a machine that answers on 8080 |
@@ -59,15 +59,26 @@ alone. The flags column is the whole of what was added to `ops pkg from-dockerfi
 | tomcat | `--resolve-entrypoint` | a machine that answers on 8080 |
 | wildfly | `--resolve-entrypoint` | a machine that answers on 8080 |
 | grafana | `--resolve-entrypoint` | a machine that answers `/login` |
-| redis | `--resolve-entrypoint` | a machine that is ready to accept connections |
+| redis | `--resolve-entrypoint` | a machine that answers on 6379 |
 | node | `--resolve-entrypoint` | a machine that answers on 3000 |
 | temurin, java | `--resolve-entrypoint` | a machine that answers on 8080 |
-| mysql | `--resolve-entrypoint` | a package carrying the data directory its first start makes |
-| keycloak | `--resolve-entrypoint` | a package carrying the server its first start builds |
-| jenkins | `--resolve-entrypoint` | a package, tini and launcher seen through |
-| nginx, apache httpd | `--resolve-entrypoint` | a package |
+| tautulli | `--resolve-entrypoint` | a machine that puts its web server on 8181 |
+| wordpress | `--resolve-entrypoint` | a machine whose apache is up and serving |
+| nextcloud | `--resolve-entrypoint` | a machine whose apache is up and serving |
+| memcached | `--resolve-entrypoint` | a machine that serves on 11211, on a kernel that reads `uid` from the manifest |
 
-Every one of them is a scenario in `test/dockerfile`, built and run on each change:
+The shape of the Dockerfile is covered as well as the image: a static binary on `scratch`, a
+dynamic one on `debian`, an `alpine` root file system, a `distroless` base, a multi stage build
+driven by `--target` and `--build-arg`, the `# syntax=` directive, an `ENTRYPOINT` in shell form,
+one whose command is built out of variables, and a `python` image. Nine of them, each a program
+that starts and says its piece.
+
+memcached is the one row that is not a scenario here. It declines to start as root and a
+unikernel has no one else to be, so it was run against a kernel that reads `uid` from the
+manifest and against one that does not, to see which of the two it would talk to.
+
+Every other one, image and shape alike, is a scenario in `test/dockerfile`, built and run on
+each change:
 
     OPS=$PWD/ops ./test/dockerfile/run.sh tomcat-resolved
 
