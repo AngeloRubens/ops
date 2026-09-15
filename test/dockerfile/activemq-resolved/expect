@@ -1,0 +1,7 @@
+# The official ActiveMQ image, asked what its entrypoint starts. The web console listens on the
+# loopback only, so what is waited for is the broker saying it has started.
+DOCKERFILE=../activemq/Dockerfile
+EXPECT=ok
+OUTPUT_MATCH="ActiveMQ.*started"
+BUILD_FLAGS="--build-arg java_version=21 --build-arg activemq_dist=apache-activemq-6.1.4-bin.tar.gz --resolve-entrypoint --resolve-timeout 300"
+BOOT_WAIT=600

@@ -1,6 +1,10 @@
 # Asked what it starts, which also runs the build it does on first start, so the package carries a
 # server that has already been made rather than one that still has to make itself.
 DOCKERFILE=../keycloak/Dockerfile
-EXPECT=package
+EXPECT=ok
+PORT=8080
+URL_PATH="/realms/master"
+OUTPUT_MATCH='"realm":"master"'
 BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
+BOOT_WAIT=900
 MANIFEST_CHECK='(.Program | test("java$")) and (.Args | map(select(test("keycloak"))) | length > 0)'
