@@ -117,8 +117,14 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		}
 	}
 
-	fmt.Printf("left out %d MB of the operating system, from %d packages the program does not reach\n",
-		leftOut/(1024*1024), len(dropped))
+	names := make([]string, 0, len(dropped))
+	for name := range dropped {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	fmt.Printf("left out %d MB of the operating system, from %d packages the program does not reach: %s\n",
+		leftOut/(1024*1024), len(dropped), strings.Join(names, " "))
 	if application != "" {
 		fmt.Printf("kept whole the package the program comes in: %s\n", application)
 	}
@@ -159,8 +165,10 @@ func packageOwners(sysroot string, rpm []byte) map[string]string {
 }
 
 // rpmQuery has rpm say every file it installed, one to a line, with the source package it was built
-// from and the name of its own package beside it.
-const rpmQuery = "[%{FILENAMES}\t%{SOURCERPM}\t%{NAME}\n]"
+// from and the name of its own package beside it. Those two are one value each, and within the
+// brackets rpm walks every tag as a list, so the = has it repeat them beside each file rather than
+// give up on a package of more files than one.
+const rpmQuery = "[%{FILENAMES}\t%{=SOURCERPM}\t%{=NAME}\n]"
 
 // askRpm asks the image's own rpm what it installed. The database is a file of rpm's making -
 // sqlite on a recent red hat, berkeley db on an older one - and rpm is what reads it.
