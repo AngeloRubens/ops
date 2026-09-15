@@ -170,15 +170,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	if opts.WholeImage {
 		fmt.Println("the whole file system of the image is carried, operating system and all")
 	} else {
-		var rpm []byte
-		if hasRpmDatabase(sysroot) {
-			var askErr error
-			if rpm, askErr = askRpm(ctx, cli, tag); askErr != nil {
-				fmt.Printf("warning: could not ask the image's rpm what it installed, so the whole of "+
-					"its operating system is carried: %v\n", askErr)
-			}
-		}
-		leaveOutTheOperatingSystem(sysroot, program, mapped, config.Env, rpm)
+		leaveOutTheOperatingSystem(sysroot, program, mapped, config.Env)
 	}
 	discardWhatCannotBeReached(sysroot)
 
