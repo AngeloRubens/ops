@@ -528,6 +528,15 @@ func TestOpenedByNameTakesEveryVersionOfAnUnversionedName(t *testing.T) {
 	assert.Nil(t, r.openedByName("libssl.so.1.1"))
 }
 
+func TestNssServicesReadsWhatNsswitchNames(t *testing.T) {
+	root := t.TempDir()
+	writeForTest(t, root, "etc/authselect/nsswitch.conf",
+		"# hosts: commented\npasswd: files sss systemd\nhosts: files myhostname resolve [!UNAVAIL=return] dns\n")
+	assert.NoError(t, os.Symlink("authselect/nsswitch.conf", filepath.Join(root, "etc", "nsswitch.conf")))
+
+	assert.Equal(t, []string{"files", "sss", "systemd", "myhostname", "resolve", "dns"}, nssServices(root))
+}
+
 func TestMappedPathsReadsTheFilesOfAMap(t *testing.T) {
 	maps := "55d0c0a00000-55d0c0a02000 r--p 00000000 00:2a 1234 /usr/local/bin/redis-server\n" +
 		"7f1c2a000000-7f1c2a021000 rw-p 00000000 00:00 0 \n" +
