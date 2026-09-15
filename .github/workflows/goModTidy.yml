@@ -20,7 +20,7 @@ jobs:
       - name: tidy
         run: |
           go get github.com/knqyf263/go-rpmdb/pkg@v0.1.1
-          go get modernc.org/sqlite@latest
+          go get modernc.org/sqlite@v1.53.0
           git diff --stat
 
       - uses: actions/upload-artifact@v4
