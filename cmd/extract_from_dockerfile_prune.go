@@ -14,6 +14,9 @@ import (
 	dockerContainer "github.com/docker/docker/api/types/container"
 	dockerClient "github.com/docker/docker/client"
 	rpmdb "github.com/knqyf263/go-rpmdb/pkg"
+	// the sqlite driver go-rpmdb opens the database of red hat 9 and fedora with, which it leaves
+	// to whoever uses it to bring
+	_ "modernc.org/sqlite"
 )
 
 // An image carries the distribution it was built on, and a unikernel is meant to carry what its
