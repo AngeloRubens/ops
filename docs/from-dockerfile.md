@@ -25,7 +25,7 @@ the image becomes the package sysroot and the configuration the image carries be
 
 An image carries the distribution it was built on, and a unikernel carries what its program needs,
 so the two are told apart by the distribution's own account of what it installed: dpkg's, the one
-a distroless image keeps, or alpine's.
+a distroless image keeps, alpine's, or rpm's.
 
 - A file no package installed stays. It is what the image put there itself - a jdk unpacked under
   `/opt`, the application, what the launcher wrote on first boot - and what that is, a jdk or only
@@ -45,8 +45,9 @@ a distroless image keeps, or alpine's.
 A library a program opens itself rather than links against - .NET opens ICU and OpenSSL, glibc
 opens libgcc_s - is found by the name the program spells out, and stays the same way.
 
-An image whose packages are in an rpm database is carried whole, and says so. `--whole-image`
-carries any image whole.
+An image that keeps its packages with rpm - ubi, oracle linux, fedora - is asked what it installed
+through its own rpm, since the database is rpm's to read. One with no rpm to ask is carried whole,
+and says so. `--whole-image` carries any image whole.
 
 The program keeps the place it has in the image rather than being copied to the root of the
 package, so a runtime that finds its home from the path of its own binary still finds it. The file
