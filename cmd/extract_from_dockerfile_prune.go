@@ -34,6 +34,7 @@ var alwaysKept = []string{
 	"/etc/passwd", "/etc/group", "/etc/hosts", "/etc/resolv.conf", "/etc/nsswitch.conf",
 	"/etc/host.conf", "/etc/gai.conf", "/etc/services", "/etc/protocols", "/etc/mime.types",
 	"/etc/localtime", "/etc/timezone", "/etc/ssl", "/etc/pki", "/etc/ca-certificates",
+	"/etc/crypto-policies",
 	"/usr/share/zoneinfo", "/usr/share/ca-certificates", "/usr/lib/ssl", "/usr/lib/locale",
 }
 
@@ -55,8 +56,17 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 	// link to authselect's, and the services it lists are libraries glibc opens by a name it puts
 	// together: hosts: files myhostname dns has it open libnss_myhostname.so.2, without which a
 	// machine cannot resolve its own name and a jvm cannot find its local host.
+	// The same goes for what those directories hold: a java.security on red hat includes a file
+	// under /etc/crypto-policies that is itself a link into /usr/share.
 	for _, p := range alwaysKept {
-		r.add(p)
+		filepath.Walk(filepath.Join(sysroot, p), func(file string, info os.FileInfo, err error) error {
+			if err == nil {
+				if inside := inSysroot(sysroot, file); inside != "" {
+					r.add(inside)
+				}
+			}
+			return nil
+		})
 	}
 	for _, service := range nssServices(sysroot) {
 		for _, found := range r.openedByName("libnss_" + service + ".so.2") {

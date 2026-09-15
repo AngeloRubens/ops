@@ -71,7 +71,7 @@ fail() {
     [ $# -gt 0 ] && printf '%s\n' "$@"
     if [ -s "$boot" ]; then
         echo "--- last of what the unikernel said ---"
-        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$" | tail -40
+        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$" | tail -200
     else
         echo "--- last of the log ---"
         tail -30 "$log"
