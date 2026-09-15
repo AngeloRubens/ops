@@ -21,6 +21,33 @@ the image becomes the package sysroot and the configuration the image carries be
 | `EXPOSE` | `RunConfig.Ports` |
 | `USER`, `HEALTHCHECK`, `VOLUME` | ignored, with a warning |
 
+## What the package carries
+
+An image carries the distribution it was built on, and a unikernel carries what its program needs,
+so the two are told apart by the distribution's own account of what it installed: dpkg's, the one
+a distroless image keeps, or alpine's.
+
+- A file no package installed stays. It is what the image put there itself - a jdk unpacked under
+  `/opt`, the application, what the launcher wrote on first boot - and what that is, a jdk or only
+  a jre, is the Dockerfile's to say.
+- Of what a package installed, what stays is what is linked against: by the program, by everything
+  the image put there itself, and whatever its processes had mapped when the image was run with
+  `--resolve-entrypoint`. A jdk takes libc, libdl, libgcc_s, libm, libpthread, librt, libstdc++,
+  libz and the dynamic linker, and a program in C, Go or .NET the same way.
+- A program the distribution installed itself - nginx, postgres, apache - comes with its package
+  whole, and the packages built from the same source, since it reads its modules, data and
+  configuration by name.
+- What a program reads by name stays: `/etc/passwd`, `/etc/hosts`, `/etc/resolv.conf`,
+  `/etc/nsswitch.conf` and their kin, the time zones, the certificates.
+- Everything else the distribution installed is left out: the shell, the package manager, perl,
+  the tools no one runs, since nanos starts one program and has no exec to start a second.
+
+A library a program opens itself rather than links against - .NET opens ICU and OpenSSL, glibc
+opens libgcc_s - is found by the name the program spells out, and stays the same way.
+
+An image whose packages are in an rpm database is carried whole, and says so. `--whole-image`
+carries any image whole.
+
 The program keeps the place it has in the image rather than being copied to the root of the
 package, so a runtime that finds its home from the path of its own binary still finds it. The file
 system is made a quarter larger than the image plus a margin, because a server writes on its first
@@ -94,3 +121,4 @@ each change:
 | `--resolve-entrypoint` | run the image to see what it starts |
 | `--resolve-timeout` | seconds to watch it for, 60 by default |
 | `--keep-image` | keep the docker image the build produces |
+| `--whole-image` | carry the whole file system of the image, operating system and all |

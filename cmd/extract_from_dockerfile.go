@@ -68,6 +68,9 @@ type DockerfileOptions struct {
 	// by reading its configuration.
 	Resolve        bool
 	ResolveTimeout time.Duration
+
+	// WholeImage carries the file system of the image as it is, operating system and all.
+	WholeImage bool
 }
 
 // BuildFromDockerfile builds a Dockerfile into a docker image and turns that image into a
@@ -113,6 +116,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 
 	argv, argvErr := entrypointArgv(config.Entrypoint, config.Cmd)
 	ran, runsAs, runsAsGroup := "", "", ""
+	var mapped []string
 	if opts.Resolve {
 		found, err := resolveByRunning(ctx, cli, tag, opts.ResolveTimeout, opts.Verbose)
 		if found != nil {
@@ -135,6 +139,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 			}
 			config.Env = append(config.Env, found.env...)
 			runsAs, runsAsGroup = found.uid, found.gid
+			mapped = found.mapped
 		}
 	}
 	if argvErr != nil {
@@ -157,12 +162,17 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		return "", "", err
 	}
 
-	discardWhatCannotBeReached(sysroot)
-
 	program, err := resolveProgram(sysroot, argv[0], config.WorkingDir, config.Env)
 	if err != nil {
 		return "", "", err
 	}
+
+	if opts.WholeImage {
+		fmt.Println("the whole file system of the image is carried, operating system and all")
+	} else {
+		leaveOutTheOperatingSystem(sysroot, program, mapped, config.Env)
+	}
+	discardWhatCannotBeReached(sysroot)
 
 	c := &types.Config{
 		Program:         program,
@@ -409,11 +419,12 @@ func exportImageFS(ctx context.Context, cli *dockerClient.Client, tag string, ra
 // makes an image built around a launcher describable by a manifest at all.
 // started is what an image turned out to be doing when it was asked, and as whom.
 type started struct {
-	argv []string
-	env  []string
-	uid  string
-	gid  string
-	id   string
+	argv   []string
+	env    []string
+	uid    string
+	gid    string
+	id     string
+	mapped []string
 }
 
 func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
@@ -461,6 +472,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 				found.argv = argv
 				found.uid, found.gid = whoIsRunning(pid)
 				found.env = environOf(ctx, cli, created.ID, pid, found.uid, verbose)
+				found.mapped = mappedBy(ctx, cli, created.ID, top, verbose)
 				return found, nil
 			}
 			continue
@@ -470,6 +482,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 		found.argv = argv
 		found.uid, found.gid = whoIsRunning(pid)
 		found.env = environOf(ctx, cli, created.ID, pid, found.uid, verbose)
+		found.mapped = mappedBy(ctx, cli, created.ID, top, verbose)
 	}
 
 	if found.argv != nil {
@@ -919,8 +932,16 @@ func searchPath(env []string) string {
 // resolveInRoot resolves p as it would resolve inside root, following the symbolic links it
 // meets on the way and keeping every one of them inside root.
 func resolveInRoot(root string, p string) (string, error) {
+	resolved, _, err := walkInRoot(root, p)
+	return resolved, err
+}
+
+// walkInRoot resolves p as resolveInRoot does, and says which links it walked through on the way:
+// a program reached by way of a link needs the link as much as the program.
+func walkInRoot(root string, p string) (string, []string, error) {
 	resolved := "/"
 	components := strings.Split(filepath.Clean(p), "/")
+	var links []string
 
 	for hops := 0; len(components) > 0; {
 		component := components[0]
@@ -932,7 +953,7 @@ func resolveInRoot(root string, p string) (string, error) {
 		next := filepath.Join(resolved, component)
 		info, err := os.Lstat(filepath.Join(root, next))
 		if err != nil {
-			return "", err
+			return "", links, err
 		}
 		if info.Mode()&os.ModeSymlink == 0 {
 			resolved = next
@@ -941,19 +962,20 @@ func resolveInRoot(root string, p string) (string, error) {
 
 		hops++
 		if hops > 32 {
-			return "", fmt.Errorf("too many levels of symbolic links resolving %s", p)
+			return "", links, fmt.Errorf("too many levels of symbolic links resolving %s", p)
 		}
 		target, err := os.Readlink(filepath.Join(root, next))
 		if err != nil {
-			return "", err
+			return "", links, err
 		}
+		links = append(links, next)
 		if filepath.IsAbs(target) {
 			resolved = "/"
 		}
 		components = append(strings.Split(filepath.Clean(target), "/"), components...)
 	}
 
-	return resolved, nil
+	return resolved, links, nil
 }
 
 // isELF reports what the file is when it is not a program nanos can start.
