@@ -1,0 +1,8 @@
+# The official mongo image, asked what its entrypoint starts. mongod answers a plain http request on
+# its own port with a sentence saying that is not how to talk to it, which is enough to know it is up.
+DOCKERFILE=../mongo/Dockerfile
+EXPECT=ok
+PORT=27017
+OUTPUT_MATCH="MongoDB over HTTP"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 240"
+BOOT_WAIT=600

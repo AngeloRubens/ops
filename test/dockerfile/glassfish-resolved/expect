@@ -1,0 +1,8 @@
+# The official GlassFish image, asked what startserv starts. Its entrypoint makes the domain on first
+# start, so the resolver is given the time for that too.
+DOCKERFILE=../glassfish/Dockerfile
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="GlassFish"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
+BOOT_WAIT=600

@@ -1,0 +1,7 @@
+# The official Open Liberty image, asked what its helper script starts, and booted. kernel-slim
+# carries no http feature, so what is waited for is the server saying it is ready.
+DOCKERFILE=../openliberty/upstream/releases/latest/kernel-slim/Dockerfile.ubi10-minimal.openjdk21
+EXPECT=ok
+OUTPUT_MATCH="CWWKF0011I"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
+BOOT_WAIT=600

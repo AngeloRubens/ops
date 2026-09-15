@@ -1,0 +1,8 @@
+# The official TomEE image, asked what catalina.sh starts, and booted. Its error page names TomEE as
+# well as its welcome page does, so either answer says the server is up.
+DOCKERFILE=../tomee/upstream/TomEE-11.0/jre25/Temurin/ubuntu/microprofile/Dockerfile
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="TomEE"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
+BOOT_WAIT=600

@@ -2,6 +2,8 @@
 # entrypoint, so the data directory it initialises is in the file system the package carries -
 # without that the server would come up to an empty data directory and stop.
 DOCKERFILE=../mysql/Dockerfile
-EXPECT=package
+EXPECT=ok
+OUTPUT_MATCH="ready for connections"
 BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 240"
+BOOT_WAIT=600
 MANIFEST_CHECK='(.Program | test("mysqld$"))'

@@ -1,0 +1,7 @@
+# traefik, asked what its entrypoint script starts, and booted.
+EXPECT=ok
+PORT=8080
+URL_PATH="/ping"
+OUTPUT_MATCH="OK"
+BUILD_FLAGS="--resolve-entrypoint"
+BOOT_WAIT=300

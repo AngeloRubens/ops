@@ -1,0 +1,8 @@
+# The quarkus Dockerfile.jvm, asked what run-java.sh starts, and booted.
+DOCKERFILE=../quarkus/Dockerfile.jvm
+EXPECT=ok
+PORT=8080
+URL_PATH="/hello"
+OUTPUT_MATCH="Hello"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
+BOOT_WAIT=600

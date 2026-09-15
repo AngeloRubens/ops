@@ -85,6 +85,15 @@ jobs:
           - payara
           - activemq
           - rocketmq
+          # the same images, asked what they start and booted
+          - quarkus-resolved
+          - tomee-resolved
+          - glassfish-resolved
+          - openliberty-resolved
+          - activemq-resolved
+          - rocketmq-resolved
+          - traefik-resolved
+          - mongo-resolved
           # the same images, asked what they start instead of read
           - wildfly-resolved
           - wildfly-interpreted

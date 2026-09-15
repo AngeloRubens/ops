@@ -1,0 +1,5 @@
+# RocketMQ's name server, asked what the entrypoint starts for it, and booted.
+EXPECT=ok
+OUTPUT_MATCH="The Name Server boot success"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
+BOOT_WAIT=600

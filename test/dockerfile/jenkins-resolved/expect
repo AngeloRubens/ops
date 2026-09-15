@@ -1,5 +1,9 @@
 # tini peeled, the script seen through, the jvm behind it taken.
 DOCKERFILE=../jenkins/Dockerfile
-EXPECT=package
+EXPECT=ok
+PORT=8080
+URL_PATH="/login"
+OUTPUT_MATCH="Jenkins"
 BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
+BOOT_WAIT=900
 MANIFEST_CHECK='(.Program | test("java$")) and (.Args | map(select(test("jenkins"))) | length > 0)'
