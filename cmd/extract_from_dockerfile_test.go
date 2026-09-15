@@ -230,6 +230,14 @@ func TestMainProgramHasNothingToTakeFromAShell(t *testing.T) {
 	assert.Nil(t, argv)
 }
 
+func TestExactArgvKeepsEachArgumentWhole(t *testing.T) {
+	// this very process, whose command line is known here for certain
+	pid := fmt.Sprint(os.Getpid())
+
+	assert.Equal(t, os.Args, exactArgv(pid, []string{os.Args[0]}))
+	assert.Equal(t, []string{"nginx:", "master"}, exactArgv(pid, []string{"nginx:", "master"}))
+}
+
 func TestStatusFieldReadsTheNumbersTheKernelKeeps(t *testing.T) {
 	// what the kernel keeps about this very process, which is the only one whose numbers are
 	// known here for certain

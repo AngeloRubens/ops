@@ -1,0 +1,7 @@
+# nginx as a single process, asked what its entrypoint starts, and booted on port 80.
+EXPECT=ok
+PORT=80
+OUTPUT_MATCH="hello from nginx on nanos"
+BUILD_FLAGS="--resolve-entrypoint"
+MANIFEST_CHECK='.Args == ["nginx", "-g", "daemon off; master_process off;"]'
+BOOT_WAIT=300

@@ -469,7 +469,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 		if sameArgv(argv, settled) {
 			// the same program over several turns: what the image sets up first is gone by then
 			if times++; times >= 4 {
-				found.argv = argv
+				found.argv = exactArgv(pid, argv)
 				found.uid, found.gid = whoIsRunning(pid)
 				found.env = environOf(ctx, cli, created.ID, pid, found.uid, verbose)
 				found.mapped = mappedBy(ctx, cli, created.ID, top, verbose)
@@ -479,7 +479,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 		}
 
 		settled, times = argv, 1
-		found.argv = argv
+		found.argv = exactArgv(pid, argv)
 		found.uid, found.gid = whoIsRunning(pid)
 		found.env = environOf(ctx, cli, created.ID, pid, found.uid, verbose)
 		found.mapped = mappedBy(ctx, cli, created.ID, top, verbose)
@@ -713,6 +713,24 @@ func readInContainer(ctx context.Context, cli *dockerClient.Client, container st
 	}
 
 	return out.Bytes(), nil
+}
+
+// exactArgv is the command line a process was started with, as the kernel keeps it, with each
+// argument whole. ps joins the arguments with spaces and they cannot be told apart again: nginx -g
+// "daemon off; master_process off;" would come back as five arguments nginx cannot read.
+func exactArgv(pid string, seen []string) []string {
+	raw, err := os.ReadFile(filepath.Join("/proc", pid, "cmdline"))
+	if err != nil || len(raw) == 0 || len(seen) == 0 {
+		return seen
+	}
+
+	argv := strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
+	if argv[0] != seen[0] {
+		// a program that rewrote its command line has nothing whole left to read
+		return seen
+	}
+
+	return argv
 }
 
 func sameArgv(a []string, b []string) bool {

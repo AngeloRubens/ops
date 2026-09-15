@@ -1,0 +1,5 @@
+# memcached, asked what its entrypoint starts, and booted.
+EXPECT=ok
+OUTPUT_MATCH="server listening"
+BUILD_FLAGS="--resolve-entrypoint"
+BOOT_WAIT=300

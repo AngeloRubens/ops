@@ -1,0 +1,8 @@
+# WordPress, asked what its entrypoint starts - apache - and booted on port 80. There is no database
+# beside it, so what a working apache and php answer with is wordpress saying it cannot reach one.
+DOCKERFILE=../wordpress/Dockerfile
+EXPECT=ok
+PORT=80
+OUTPUT_MATCH="database connection"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 120"
+BOOT_WAIT=600
