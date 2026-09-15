@@ -318,3 +318,215 @@ func TestResolveBuildContextRefusesADockerfileOutsideIt(t *testing.T) {
 
 	assert.Error(t, err)
 }
+
+func TestWalkInRootNamesTheLinksOnTheWay(t *testing.T) {
+	root := sysrootForTest(t)
+
+	resolved, links, err := walkInRoot(root, "/bin/node")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "/usr/bin/node", resolved)
+	assert.Equal(t, []string{"/bin"}, links)
+}
+
+func writeForTest(t *testing.T, root string, p string, content string) {
+	t.Helper()
+
+	full := filepath.Join(root, p)
+	assert.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+	assert.NoError(t, os.WriteFile(full, []byte(content), 0644))
+}
+
+// a debian root file system the way an image carries one: a merged /usr, and a package database
+// that names some of the files by where they were before the merge
+func debianForTest(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "usr", "lib"), 0755))
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "tmp"), 0755))
+	assert.NoError(t, os.Symlink("usr/lib", filepath.Join(root, "lib")))
+
+	writeForTest(t, root, "usr/lib/libc.so.6", "libc")
+	writeForTest(t, root, "usr/bin/ldd", "#!/bin/bash\n")
+	writeForTest(t, root, "usr/bin/perl", "perl")
+	writeForTest(t, root, "usr/share/perl/strict.pm", "1;\n")
+	writeForTest(t, root, "etc/perl/Config.pm", "1;\n")
+	writeForTest(t, root, "etc/nsswitch.conf", "hosts: files dns\n")
+	writeForTest(t, root, "opt/java/bin/java", "java")
+
+	writeForTest(t, root, "var/lib/dpkg/status", `Package: libc6
+Status: install ok installed
+Architecture: amd64
+Multi-Arch: same
+Source: glibc
+Description: the C library
+ carried on a second line
+
+Package: libc-bin
+Status: install ok installed
+Architecture: amd64
+Source: glibc
+
+Package: perl-base
+Status: install ok installed
+Architecture: amd64
+Source: perl (5.36.0-7)
+
+Package: gone
+Status: deinstall ok config-files
+Architecture: amd64
+`)
+	writeForTest(t, root, "var/lib/dpkg/info/libc6:amd64.list", "/.\n/lib\n/lib/libc.so.6\n")
+	writeForTest(t, root, "var/lib/dpkg/info/libc-bin.list", "/.\n/usr/bin/ldd\n")
+	writeForTest(t, root, "var/lib/dpkg/info/perl-base.list",
+		"/.\n/usr/bin/perl\n/usr/share/perl/strict.pm\n/etc/perl/Config.pm\n")
+	writeForTest(t, root, "var/lib/dpkg/info/gone.list", "/usr/bin/gone\n")
+
+	return root
+}
+
+func TestPackageOwnersReadsWhatDpkgInstalled(t *testing.T) {
+	owners := packageOwners(debianForTest(t))
+
+	assert.Equal(t, "glibc", owners["/usr/lib/libc.so.6"])
+	assert.Equal(t, "glibc", owners["/usr/bin/ldd"])
+	assert.Equal(t, "perl", owners["/usr/bin/perl"])
+
+	_, owned := owners["/usr/bin/gone"]
+	assert.False(t, owned)
+	_, owned = owners["/opt/java/bin/java"]
+	assert.False(t, owned)
+}
+
+func TestPackageOwnersReadsWhatApkInstalled(t *testing.T) {
+	root := t.TempDir()
+	writeForTest(t, root, "lib/apk/db/installed",
+		"C:Q1abc=\nP:musl\nV:1.2.5-r0\no:musl\nF:lib\nR:ld-musl-x86_64.so.1\n\n"+
+			"P:busybox-binsh\nV:1.36.1-r29\no:busybox\nF:bin\nR:sh\nF:usr/bin\nR:env\n")
+
+	owners := packageOwners(root)
+
+	assert.Equal(t, "musl", owners["/lib/ld-musl-x86_64.so.1"])
+	assert.Equal(t, "busybox", owners["/bin/sh"])
+	assert.Equal(t, "busybox", owners["/usr/bin/env"])
+}
+
+func TestPackageOwnersReadsADistrolessDatabase(t *testing.T) {
+	root := t.TempDir()
+	writeForTest(t, root, "var/lib/dpkg/status.d/libssl3", "Package: libssl3\nSource: openssl\n")
+	writeForTest(t, root, "var/lib/dpkg/status.d/libssl3.md5sums",
+		"0123456789abcdef  usr/lib/x86_64-linux-gnu/libssl.so.3\n")
+
+	owners := packageOwners(root)
+
+	assert.Equal(t, "openssl", owners["/usr/lib/x86_64-linux-gnu/libssl.so.3"])
+}
+
+func existsForTest(root string, p string) bool {
+	_, err := os.Lstat(filepath.Join(root, p))
+	return err == nil
+}
+
+func TestLeaveOutTheOperatingSystemKeepsWhatThePackagesDidNotInstall(t *testing.T) {
+	root := debianForTest(t)
+
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", []string{"/lib/libc.so.6"}, nil)
+
+	assert.True(t, existsForTest(root, "opt/java/bin/java"), "what the image put there itself")
+	assert.True(t, existsForTest(root, "usr/lib/libc.so.6"), "what the program reaches")
+	assert.True(t, existsForTest(root, "etc/nsswitch.conf"), "what is read by name")
+	assert.True(t, existsForTest(root, "tmp"), "a directory that was empty to begin with")
+	assert.False(t, existsForTest(root, "usr/bin/ldd"), "what is packaged beside a library")
+	assert.False(t, existsForTest(root, "usr/bin/perl"), "a package nothing reaches")
+	assert.False(t, existsForTest(root, "etc/perl/Config.pm"), "its configuration")
+	assert.False(t, existsForTest(root, "usr/share/perl"), "a directory that held only that package")
+}
+
+func TestLeaveOutTheOperatingSystemKeepsThePackageOfTheProgram(t *testing.T) {
+	root := debianForTest(t)
+
+	leaveOutTheOperatingSystem(root, "/usr/bin/perl", nil, nil)
+
+	assert.True(t, existsForTest(root, "usr/bin/perl"))
+	assert.True(t, existsForTest(root, "usr/share/perl/strict.pm"), "what the program reads by name")
+	assert.True(t, existsForTest(root, "etc/perl/Config.pm"), "its configuration")
+	assert.False(t, existsForTest(root, "usr/bin/ldd"), "a package the program does not come in")
+}
+
+func TestLeaveOutTheOperatingSystemKeepsEverythingWithoutADatabase(t *testing.T) {
+	root := t.TempDir()
+	writeForTest(t, root, "usr/bin/perl", "perl")
+
+	leaveOutTheOperatingSystem(root, "/opt/app", nil, nil)
+
+	_, err := os.Stat(filepath.Join(root, "usr", "bin", "perl"))
+	assert.NoError(t, err)
+}
+
+func TestLibraryDirsReadsTheLinkerConfiguration(t *testing.T) {
+	root := t.TempDir()
+	writeForTest(t, root, "etc/ld.so.conf", "include /etc/ld.so.conf.d/*.conf\n")
+	writeForTest(t, root, "etc/ld.so.conf.d/x86_64-linux-gnu.conf",
+		"# Multiarch support\n/usr/local/lib/x86_64-linux-gnu\n/lib/x86_64-linux-gnu\n")
+
+	dirs := libraryDirs(root)
+
+	assert.Equal(t, []string{"/usr/local/lib/x86_64-linux-gnu", "/lib/x86_64-linux-gnu"}, dirs[:2])
+	assert.Contains(t, dirs, "/usr/lib")
+}
+
+func TestFindLibraryLooksWhereTheLinkerLooks(t *testing.T) {
+	root := t.TempDir()
+	writeForTest(t, root, "usr/lib/libz.so.1", "system")
+	writeForTest(t, root, "opt/app/lib/libz.so.1", "bundled")
+	writeForTest(t, root, "srv/lib/libz.so.1", "asked for")
+
+	r := newReach(root, nil)
+	assert.Equal(t, "/usr/lib/libz.so.1", r.findLibrary("libz.so.1", "/opt/app/bin", nil, nil))
+	assert.Equal(t, "/opt/app/lib/libz.so.1",
+		r.findLibrary("libz.so.1", "/opt/app/bin", nil, []string{"$ORIGIN/../lib"}))
+	assert.Equal(t, "", r.findLibrary("libabsent.so", "/opt/app/bin", nil, nil))
+
+	r = newReach(root, []string{"LD_LIBRARY_PATH=/srv/lib"})
+	assert.Equal(t, "/srv/lib/libz.so.1", r.findLibrary("libz.so.1", "/opt/app/bin", nil, nil))
+}
+
+func TestNamedInFindsTheLibrariesAProgramOpensItself(t *testing.T) {
+	root := t.TempDir()
+	writeForTest(t, root, "native.so",
+		"\x7fELF\x00libssl.so.3\x00libicuuc.so.%d\x00/usr/lib/libz.so\x00libssl.so.3\x00plain words\x00")
+
+	assert.Equal(t, []string{"libssl.so.3", "libicuuc.so", "libz.so"},
+		namedIn(filepath.Join(root, "native.so")))
+}
+
+func TestOpenedByNameTakesEveryVersionOfAnUnversionedName(t *testing.T) {
+	root := t.TempDir()
+	writeForTest(t, root, "usr/lib/libicuuc.so.72", "icu")
+	writeForTest(t, root, "usr/lib/libicuuc.so.72.1", "icu")
+	writeForTest(t, root, "usr/lib/libssl.so.3", "ssl")
+
+	r := newReach(root, nil)
+
+	assert.Equal(t, []string{"/usr/lib/libssl.so.3"}, r.openedByName("libssl.so.3"))
+	assert.Equal(t, []string{"/usr/lib/libicuuc.so.72", "/usr/lib/libicuuc.so.72.1"},
+		r.openedByName("libicuuc.so"))
+	assert.Nil(t, r.openedByName("libssl.so.1.1"))
+}
+
+func TestMappedPathsReadsTheFilesOfAMap(t *testing.T) {
+	maps := "55d0c0a00000-55d0c0a02000 r--p 00000000 00:2a 1234 /usr/local/bin/redis-server\n" +
+		"7f1c2a000000-7f1c2a021000 rw-p 00000000 00:00 0 \n" +
+		"7f1c2a400000-7f1c2a428000 r--p 00000000 00:2a 99 /usr/lib/x86_64-linux-gnu/libc.so.6\n" +
+		"7f1c2a600000-7f1c2a601000 rw-s 00000000 00:01 7 /memfd:jit (deleted)\n" +
+		"7f1c2a800000-7f1c2a801000 r--p 00000000 00:2a 12 /opt/app/a name with spaces.so\n" +
+		"7ffd1e5f0000-7ffd1e611000 rw-p 00000000 00:00 0 [stack]\n"
+
+	assert.Equal(t, []string{
+		"/usr/local/bin/redis-server",
+		"/usr/lib/x86_64-linux-gnu/libc.so.6",
+		"/memfd:jit",
+		"/opt/app/a name with spaces.so",
+	}, mappedPaths([]byte(maps)))
+}

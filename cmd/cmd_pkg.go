@@ -860,6 +860,7 @@ func fromDockerfileCommand() *cobra.Command {
 	persistentFlags.Bool("keep-image", false, "keep the docker image the build produces")
 	persistentFlags.Bool("resolve-entrypoint", false, "run the image to see what it starts, for an image whose entrypoint is a launcher script")
 	persistentFlags.Int("resolve-timeout", 60, "seconds to watch the image for")
+	persistentFlags.Bool("whole-image", false, "carry the whole file system of the image, operating system and all")
 
 	return cmdFromDockerfile
 }
@@ -894,6 +895,7 @@ func fromDockerfileCommandHandler(cmd *cobra.Command, args []string) {
 	keepImage, _ := flags.GetBool("keep-image")
 	resolve, _ := flags.GetBool("resolve-entrypoint")
 	resolveTimeout, _ := flags.GetInt("resolve-timeout")
+	wholeImage, _ := flags.GetBool("whole-image")
 	packageName, _ := flags.GetString("name")
 	version, _ := flags.GetString("version")
 	contextDir, _ := flags.GetString("context")
@@ -922,6 +924,8 @@ func fromDockerfileCommandHandler(cmd *cobra.Command, args []string) {
 
 		Resolve:        resolve,
 		ResolveTimeout: time.Duration(resolveTimeout) * time.Second,
+
+		WholeImage: wholeImage,
 	})
 	if err != nil {
 		exitWithError(err.Error())
