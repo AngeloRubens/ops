@@ -48,6 +48,19 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		r.add(p)
 	}
 
+	// What a program reads by name brings what it names in turn. On red hat nsswitch.conf is a
+	// link to authselect's, and the services it lists are libraries glibc opens by a name it puts
+	// together: hosts: files myhostname dns has it open libnss_myhostname.so.2, without which a
+	// machine cannot resolve its own name and a jvm cannot find its local host.
+	for _, p := range alwaysKept {
+		r.add(p)
+	}
+	for _, service := range nssServices(sysroot) {
+		for _, found := range r.openedByName("libnss_" + service + ".so.2") {
+			r.add(found)
+		}
+	}
+
 	// What the image carries of its own stays, and so do the libraries it was linked against.
 	filepath.Walk(sysroot, func(file string, info os.FileInfo, err error) error {
 		if err != nil || !info.Mode().IsRegular() {
@@ -126,6 +139,41 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		fmt.Printf("kept whole the package the program comes in: %s\n", application)
 	}
 	fmt.Printf("kept of the operating system what is linked against: %s\n", strings.Join(carried, " "))
+}
+
+// nssServices are the services /etc/nsswitch.conf has glibc look users and names up with, each a
+// library glibc opens when it gets to it.
+func nssServices(sysroot string) []string {
+	resolved, err := resolveInRoot(sysroot, "/etc/nsswitch.conf")
+	if err != nil {
+		return nil
+	}
+	raw, err := os.ReadFile(filepath.Join(sysroot, resolved))
+	if err != nil {
+		return nil
+	}
+
+	seen := map[string]bool{}
+	var services []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if at := strings.Index(line, "#"); at >= 0 {
+			line = line[:at]
+		}
+		_, named, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+		for _, service := range strings.Fields(named) {
+			// what to do when a service answers a certain way, in brackets, is not a service
+			if strings.HasPrefix(service, "[") || strings.HasSuffix(service, "]") || seen[service] {
+				continue
+			}
+			seen[service] = true
+			services = append(services, service)
+		}
+	}
+
+	return services
 }
 
 // inSysroot is the name a file of sysroot goes by inside it.

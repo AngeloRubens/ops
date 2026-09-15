@@ -1,0 +1,8 @@
+# The same wildfly-interpreted, carried whole: the one to hold the pruned package against. If this
+# answers and the pruned one does not, what stops the pruned one is something that was left out.
+DOCKERFILE=../wildfly-interpreted/Dockerfile
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="WildFly"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300 --whole-image"
+BOOT_WAIT=900

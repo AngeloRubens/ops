@@ -36,7 +36,7 @@ jobs:
       # the tests this change adds, by name: the ones already in cmd build images and want
       # a hypervisor on the path, which is a state of that package rather than of this change
       - name: test
-        run: go test ./cmd/... -count 1 -run 'EntrypointArgv|ResolveInRoot|ResolveProgram|MainProgram|ExposedPorts|Environment|WriteHosts|VolumeSize|IsKernelPath|ResolveBuildContext|StatusField|WalkInRoot|PackageOwners|LeaveOutTheOperatingSystem|LibraryDirs|FindLibrary|MappedPaths|NamedIn|OpenedByName|RpmSource'
+        run: go test ./cmd/... -count 1 -run 'EntrypointArgv|ResolveInRoot|ResolveProgram|MainProgram|ExposedPorts|Environment|WriteHosts|VolumeSize|IsKernelPath|ResolveBuildContext|StatusField|WalkInRoot|PackageOwners|LeaveOutTheOperatingSystem|LibraryDirs|FindLibrary|MappedPaths|NamedIn|OpenedByName|RpmSource|NssServices'
 
       - name: build
         run: go build -o ops -v
@@ -88,6 +88,7 @@ jobs:
           # the same images, asked what they start instead of read
           - wildfly-resolved
           - wildfly-interpreted
+          - wildfly-interpreted-whole
           - tomcat-resolved
           # the images people actually pull, with the configuration they carry
           - nginx
