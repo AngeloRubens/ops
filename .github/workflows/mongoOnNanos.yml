@@ -71,6 +71,13 @@ jobs:
           fi
           echo "mongodb got past counting the processors"
 
+          # It can still stop further on, and a machine that dumps core has stopped: the line it
+          # wrote last says where.
+          if grep -qi "core dump" patched.log; then
+            echo "::error::mongodb stopped further on: $(grep -aiE 'Got signal|fatal|invariant|abort' patched.log | tail -1 | cut -c1-200)"
+            exit 1
+          fi
+
           if grep -qi "Waiting for connections" patched.log; then
             echo "and it is up"
           else
