@@ -1,0 +1,84 @@
+name: a database that counts the processors
+
+# The same image started twice: once on the kernel ops fetches, and once on a kernel built from the
+# branch that lists the processors a machine could have. The allocator mongodb 8 is built with reads
+# /sys/devices/system/cpu/possible before anything else and stops the process when it cannot, so the
+# pair of runs says whether that file is the whole of what mongodb was missing.
+
+on:
+  push:
+    branches: [ci/mongo-possible]
+  workflow_dispatch:
+
+jobs:
+  both-kernels:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build ops
+        run: go build -o ops -v
+
+      - name: Fetch and build the kernel that lists the processors
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 nasm build-essential
+          git clone --depth 1 --branch feat/sys-cpu-possible \
+            https://github.com/AngeloRubens/nanos.git nanos
+          make -C nanos -j"$(nproc)" kernel PLATFORM=pc 2>&1 | tail -3
+          ls -l nanos/output/platform/pc/bin/kernel.img
+          printf '{"Kernel":"%s/nanos/output/platform/pc/bin/kernel.img",' "$PWD" > patched.json
+          printf '"KlibDir":"%s/nanos/output/platform/pc/bin"}\n' "$PWD" >> patched.json
+          cat patched.json
+
+      - name: Make the package
+        run: |
+          ./ops pkg from-dockerfile test/sys/mongo8.Dockerfile \
+            --name mongo8 --resolve-entrypoint --resolve-timeout 240 2>&1 | tail -20
+          cat "$HOME/.ops/local_packages/amd64/mongo8/package.manifest"
+
+      - name: On the kernel ops fetches
+        run: |
+          set +e
+          timeout 600 ./ops pkg load -l mongo8 --accel=false -p 27017 > stock.log 2>&1 &
+          for _ in $(seq 1 120); do
+            grep -qiE "Waiting for connections|NumPossibleCPUs" stock.log && break
+            sleep 2
+          done
+          pkill -f qemu-system
+          tr '\r' '\n' < stock.log | grep -vE "^ *[0-9]+% \||^ *$" | tail -12
+
+      - name: On the kernel that lists the processors
+        run: |
+          set +e
+          timeout 900 ./ops pkg load -l mongo8 -c patched.json --accel=false -p 27017 > patched.log 2>&1 &
+          for _ in $(seq 1 180); do
+            grep -qiE "Waiting for connections|NumPossibleCPUs" patched.log && break
+            sleep 2
+          done
+          pkill -f qemu-system
+          tr '\r' '\n' < patched.log | grep -vE "^ *[0-9]+% \||^ *$" | tail -30
+
+          if grep -qi "NumPossibleCPUs" patched.log; then
+            echo "::error::mongodb still cannot count the processors"
+            exit 1
+          fi
+          echo "mongodb got past counting the processors"
+
+          if grep -qi "Waiting for connections" patched.log; then
+            echo "and it is up"
+          else
+            echo "::warning::mongodb did not say it is up; the console is in the artifact"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mongo8
+          path: "*.log"
