@@ -4,5 +4,5 @@ DOCKERFILE=../wordpress/Dockerfile
 EXPECT=ok
 PORT=80
 OUTPUT_MATCH="database connection"
-BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 120"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 120 --verbose"
 BOOT_WAIT=600
