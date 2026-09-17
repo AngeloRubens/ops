@@ -304,6 +304,29 @@ func TestWriteHostsGivesLocalhostAnAddress(t *testing.T) {
 	assert.Contains(t, string(written), "localhost")
 }
 
+func TestWriteMachineFilesCountsTheProcessors(t *testing.T) {
+	root := t.TempDir()
+
+	assert.NoError(t, writeMachineFiles(root, "amd64"))
+
+	cpuinfo, err := os.ReadFile(filepath.Join(root, "proc", "cpuinfo"))
+	assert.NoError(t, err)
+	assert.Equal(t, "processor\t: 0\n\n", string(cpuinfo))
+
+	possible, err := os.ReadFile(filepath.Join(root, "sys", "devices", "system", "cpu", "possible"))
+	assert.NoError(t, err)
+	assert.Equal(t, "0-0\n", string(possible))
+}
+
+func TestWriteMachineFilesLeavesTheKernelToAnswerOnArm(t *testing.T) {
+	root := t.TempDir()
+
+	assert.NoError(t, writeMachineFiles(root, "arm64"))
+
+	_, err := os.Stat(filepath.Join(root, "proc", "cpuinfo"))
+	assert.Error(t, err)
+}
+
 func TestWriteHostsLeavesTheOneTheImageCarries(t *testing.T) {
 	root := t.TempDir()
 	carried := "10.0.0.1 localhost mine\n"
