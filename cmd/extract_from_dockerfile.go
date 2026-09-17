@@ -161,6 +161,9 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	if err := writeHosts(sysroot); err != nil {
 		return "", "", err
 	}
+	if err := writeMachineFiles(sysroot, opts.Arch); err != nil {
+		return "", "", err
+	}
 
 	program, err := resolveProgram(sysroot, argv[0], config.WorkingDir, config.Env)
 	if err != nil {
@@ -873,6 +876,43 @@ func writeHosts(sysroot string) error {
 	}
 
 	return os.WriteFile(hosts, []byte("127.0.0.1\tlocalhost\n::1\tlocalhost ip6-localhost ip6-loopback\n"), 0644)
+}
+
+// writeMachineFiles writes what a program reads to learn what machine it runs on. A container is
+// told by the kernel it shares; nanos answers part of it and keeps no /proc/cpuinfo on x86_64, and
+// lists the processors that are online but not those the machine could have. mongodb counts them
+// before it does anything else and stops when the answer is none: 7 fails an invariant that wants
+// more than none, and 8 reads /sys/devices/system/cpu/possible first and stops there.
+//
+// Only on x86_64: on aarch64 the kernel answers for cpuinfo itself, and a file of ours in its place
+// would stop it from starting at all, since it asserts that it can make its own.
+func writeMachineFiles(sysroot string, arch string) error {
+	if arch == "" {
+		arch = runtime.GOARCH
+	}
+	if arch != "amd64" && arch != "x86_64" {
+		return nil
+	}
+
+	// A machine gets one processor unless it is asked for more, and what a program wants from these
+	// files is how many there are. What it is running on it asks the processor itself, which nanos
+	// lets it do.
+	machine := map[string]string{
+		"proc/cpuinfo":                    "processor\t: 0\n\n",
+		"sys/devices/system/cpu/possible": "0-0\n",
+	}
+
+	for name, says := range machine {
+		path := filepath.Join(sysroot, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(says), 0444); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // entrypointArgv works out what the image would run, the way docker does: the entrypoint with
