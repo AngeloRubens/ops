@@ -98,6 +98,10 @@ jobs:
           - memcached-resolved
           - wordpress-resolved
           - nginx-single
+          # the same, carried whole, to tell what pruning stops from what it does not
+          - quarkus-resolved-whole
+          - memcached-resolved-whole
+          - wordpress-resolved-whole
           # the same images, asked what they start instead of read
           - wildfly-resolved
           - wildfly-interpreted
