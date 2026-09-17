@@ -1,0 +1,9 @@
+# quarkus-resolved carried whole, to hold the pruned one against: if this answers and the pruned one
+# does not, what stops the pruned one is something that was left out.
+DOCKERFILE=../quarkus/Dockerfile.jvm
+EXPECT=ok
+PORT=8080
+URL_PATH="/hello"
+OUTPUT_MATCH="Hello"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300 --whole-image"
+BOOT_WAIT=600

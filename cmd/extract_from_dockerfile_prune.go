@@ -104,6 +104,35 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		}
 	}
 
+	// A library can read its data by name as a program does: fontconfig reads its configuration
+	// under /etc/fonts and the fonts that lists, and a jvm that draws text - jenkins does as it
+	// starts - stops without them.
+	readByLibraries := map[string][]string{
+		"libfontconfig.so": {"/etc/fonts", "/usr/share/fonts", "/usr/share/fontconfig"},
+	}
+	for library, trees := range readByLibraries {
+		reached := false
+		for p := range r.files {
+			if strings.HasPrefix(filepath.Base(p), library) {
+				reached = true
+				break
+			}
+		}
+		if !reached {
+			continue
+		}
+		for _, tree := range trees {
+			filepath.Walk(filepath.Join(sysroot, tree), func(file string, info os.FileInfo, err error) error {
+				if err == nil {
+					if inside := inSysroot(sysroot, file); inside != "" {
+						r.add(inside)
+					}
+				}
+				return nil
+			})
+		}
+	}
+
 	var leftOut int64
 	dropped := map[string]bool{}
 	var emptied, carried []string

@@ -1,0 +1,6 @@
+# memcached-resolved carried whole, to hold the pruned one against.
+DOCKERFILE=../memcached-resolved/Dockerfile
+EXPECT=ok
+OUTPUT_MATCH="server listening"
+BUILD_FLAGS="--resolve-entrypoint --whole-image"
+BOOT_WAIT=300

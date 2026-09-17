@@ -475,7 +475,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 			// A step that prepares the server can run that long too - keycloak builds itself in a
 			// jvm that then exits - so it is the program listening on a port that is taken, and one
 			// that never does is watched until the time is up.
-			if times++; times >= 4 && listens(pid) {
+			if times++; times >= 4 && listens(ctx, cli, created.ID, pid) {
 				found.argv = exactArgv(pid, argv)
 				found.uid, found.gid = whoIsRunning(pid)
 				found.env = environOf(ctx, cli, created.ID, pid, found.uid, verbose)
@@ -506,10 +506,16 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 }
 
 // listens reports whether anything in the network namespace of a process listens on a tcp port,
-// which is how a server says it is up and what a step that only prepares one does not do.
-func listens(pid string) bool {
+// which is how a server says it is up and what a step that only prepares one does not do. When this
+// side is not let read the table, it is read from inside the container.
+func listens(ctx context.Context, cli *dockerClient.Client, container string, pid string) bool {
 	for _, table := range []string{"tcp", "tcp6"} {
 		raw, err := os.ReadFile(filepath.Join("/proc", pid, "net", table))
+		if err != nil {
+			if inside := containerPid(pid); inside != "" {
+				raw, err = readInContainer(ctx, cli, container, "/proc/"+inside+"/net/"+table, "")
+			}
+		}
 		if err == nil && listeningIn(raw) {
 			return true
 		}
