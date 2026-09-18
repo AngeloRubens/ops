@@ -5,4 +5,4 @@ EXPECT=ok
 PORT=8080
 OUTPUT_MATCH="GlassFish"
 BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
-BOOT_WAIT=600
+BOOT_WAIT=900

@@ -430,6 +430,11 @@ func debianForTest(t *testing.T) string {
 	writeForTest(t, root, "usr/share/perl/strict.pm", "1;\n")
 	writeForTest(t, root, "etc/perl/Config.pm", "1;\n")
 	writeForTest(t, root, "etc/nsswitch.conf", "hosts: files dns\n")
+
+	// the link a debian image has in place of a directory, put there by a package nothing reaches
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "run"), 0755))
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "var"), 0755))
+	assert.NoError(t, os.Symlink("/run", filepath.Join(root, "var", "run")))
 	writeForTest(t, root, "opt/java/bin/java", "java")
 
 	writeForTest(t, root, "var/lib/dpkg/status", `Package: libc6
@@ -450,10 +455,15 @@ Status: install ok installed
 Architecture: amd64
 Source: perl (5.36.0-7)
 
+Package: base-files
+Status: install ok installed
+Architecture: amd64
+
 Package: gone
 Status: deinstall ok config-files
 Architecture: amd64
 `)
+	writeForTest(t, root, "var/lib/dpkg/info/base-files.list", "/.\n/var/run\n")
 	writeForTest(t, root, "var/lib/dpkg/info/libc6:amd64.list", "/.\n/lib\n/lib/libc.so.6\n")
 	writeForTest(t, root, "var/lib/dpkg/info/libc-bin.list", "/.\n/usr/bin/ldd\n")
 	writeForTest(t, root, "var/lib/dpkg/info/perl-base.list",
@@ -514,6 +524,7 @@ func TestLeaveOutTheOperatingSystemKeepsWhatThePackagesDidNotInstall(t *testing.
 	assert.True(t, existsForTest(root, "usr/lib/libc.so.6"), "what the program reaches")
 	assert.True(t, existsForTest(root, "etc/nsswitch.conf"), "what is read by name")
 	assert.True(t, existsForTest(root, "tmp"), "a directory that was empty to begin with")
+	assert.True(t, existsForTest(root, "var/run"), "a link standing in for a directory")
 	assert.False(t, existsForTest(root, "usr/bin/ldd"), "what is packaged beside a library")
 	assert.False(t, existsForTest(root, "usr/bin/perl"), "a package nothing reaches")
 	assert.False(t, existsForTest(root, "etc/perl/Config.pm"), "its configuration")
