@@ -150,6 +150,12 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 			carried = append(carried, p)
 			return nil
 		}
+		// A link is the shape of the file system rather than anything in it, and it costs nothing
+		// to keep: /var/run points at /run on a debian image, and a program told to write in
+		// /var/run/apache2 finds nothing to walk once the link is gone.
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
 		if os.Remove(file) == nil {
 			if info.Mode().IsRegular() {
 				leftOut += info.Size()
