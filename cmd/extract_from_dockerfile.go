@@ -898,12 +898,17 @@ func writeMachineFiles(sysroot string, arch string) error {
 		return nil
 	}
 
-	// A machine gets one processor unless it is asked for more, and what a program wants from these
-	// files is how many there are. What it is running on it asks the processor itself, which nanos
-	// lets it do.
+	// How many processors the machine will be given is not known here: it is said when the machine
+	// is started, not when the package is made. So the two files err in the direction each can
+	// afford. A program reading cpuinfo sizes its work by the processors it counts, and counting
+	// one too few costs speed, so it says one. What reads "possible" cannot take a number below the
+	// truth - tcmalloc keeps a cache per processor, sized by that number and indexed by the
+	// processor it runs on - while a number above it costs only memory never used, so it says what
+	// no machine will go beyond. What the machine really has, the kernel answers itself in
+	// "online", and a program that wants the truth has it there.
 	machine := map[string]string{
 		"proc/cpuinfo":                    "processor\t: 0\n\n",
-		"sys/devices/system/cpu/possible": "0-0\n",
+		"sys/devices/system/cpu/possible": "0-63\n",
 	}
 
 	for name, says := range machine {
