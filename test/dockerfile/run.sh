@@ -69,6 +69,10 @@ fail() {
     echo "FAIL $scenario: $1"
     shift
     [ $# -gt 0 ] && printf '%s\n' "$@"
+    # a program that wants a directory to write in says so by name, and what the package has under
+    # the ones a container runtime makes is worth seeing
+    ls -la "$HOME/.ops/local_packages/$arch/$pkg/sysroot/run" \
+        "$HOME/.ops/local_packages/$arch/$pkg/sysroot/var/run" 2>&1 | head -24
     if [ -s "$boot" ]; then
         echo "--- last of what the unikernel said ---"
         tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$" | tail -200
