@@ -234,6 +234,25 @@ func TestMainProgramTakesTheServerALauncherStarts(t *testing.T) {
 	assert.Contains(t, argv, "com.sun.enterprise.glassfish.bootstrap.ASMain")
 }
 
+func TestMainProgramTakesTheMasterOfSeveralWorkers(t *testing.T) {
+	// apache starts a worker per connection pool, and it is the master a unikernel can run
+	top := dockerContainer.TopResponse{
+		Titles: []string{"PID", "PPID", "ARGS"},
+		Processes: [][]string{
+			{"1", "0", "/bin/bash /usr/local/bin/docker-entrypoint.sh apache2-foreground"},
+			{"20", "1", "apache2 -DFOREGROUND"},
+			{"24", "20", "apache2 -DFOREGROUND"},
+			{"25", "20", "apache2 -DFOREGROUND"},
+			{"26", "20", "apache2 -DFOREGROUND"},
+		},
+	}
+
+	argv, pid := mainProgram(top)
+
+	assert.Equal(t, "20", pid)
+	assert.Equal(t, []string{"apache2", "-DFOREGROUND"}, argv)
+}
+
 func TestListeningInReadsTheSocketsTheKernelKeeps(t *testing.T) {
 	header := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
 	listening := header + "   0: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 12345\n"
