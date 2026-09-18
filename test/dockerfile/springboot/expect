@@ -4,3 +4,6 @@ EXPECT=ok
 PORT=8080
 OUTPUT_MATCH="hello from spring boot"
 MANIFEST_CHECK='.RunConfig.Ports == ["8080"] and .ManifestPassthrough.cwd == "/application"'
+# spring takes three quarters of a minute just to make its context on a runner with nothing to
+# emulate with, and the default wait ran out while it was still starting
+BOOT_WAIT=600

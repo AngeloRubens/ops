@@ -1146,6 +1146,12 @@ func environment(env []string) map[string]string {
 	out := map[string]string{}
 	for _, e := range env {
 		if name, value, found := strings.Cut(e, "="); found {
+			// HOSTNAME names the container the image was run in, and nothing answers to that name
+			// on the machine the package becomes: payara spends the start of its life looking it
+			// up and failing.
+			if name == "HOSTNAME" {
+				continue
+			}
 			out[name] = value
 		}
 	}
