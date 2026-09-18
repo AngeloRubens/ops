@@ -618,17 +618,21 @@ func mainProgram(top dockerContainer.TopResponse) ([]string, string) {
 
 	// A launcher can be the same program as what it launches: glassfish's asadmin is a jvm that
 	// starts the server's jvm and waits on it, and nanos has no way to start the second. So a child
-	// running the same program is the one to take.
+	// running the same program is the one to take - but only where there is one of it. A program
+	// that starts several of itself is a master with workers, as apache is, and what a unikernel
+	// can run is the master.
 	for hops := 0; best != nil && hops < 8; hops++ {
 		var child []string
 		childPid := ""
+		children := 0
 		for _, pid := range pids {
 			p := processes[pid]
 			if p.ppid == bestPid && filepath.Base(p.argv[0]) == filepath.Base(best[0]) {
 				child, childPid = p.argv, pid
+				children++
 			}
 		}
-		if child == nil {
+		if children != 1 {
 			break
 		}
 		best, bestPid = child, childPid
