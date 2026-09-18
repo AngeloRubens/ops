@@ -334,7 +334,7 @@ func TestWriteMachineFilesCountsTheProcessors(t *testing.T) {
 
 	possible, err := os.ReadFile(filepath.Join(root, "sys", "devices", "system", "cpu", "possible"))
 	assert.NoError(t, err)
-	assert.Equal(t, "0-0\n", string(possible))
+	assert.Equal(t, "0-63\n", string(possible))
 }
 
 func TestWriteMachineFilesLeavesTheKernelToAnswerOnArm(t *testing.T) {
