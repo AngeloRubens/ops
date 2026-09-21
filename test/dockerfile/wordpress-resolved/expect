@@ -1,8 +1,10 @@
-# WordPress, asked what its entrypoint starts - apache - and booted on port 80. There is no database
-# beside it, so what a working apache and php answer with is wordpress saying it cannot reach one.
+# WordPress, asked what its entrypoint starts: apache. The package is as far as this goes, and the
+# reason is in the image rather than in the package. The php image turns apache to prefork, since
+# mod_php wants it, and in prefork the master serves nothing: the workers do, and they are made with
+# fork. glibc asks for that with a clone that does not share the address space, which nanos answers
+# with ENOSYS, so the master listens on 80 and accepts nothing for as long as it is left running.
+# wordpress-php is the same application in a shape a unikernel can run.
 DOCKERFILE=../wordpress/Dockerfile
-EXPECT=ok
-PORT=80
-OUTPUT_MATCH="database connection"
-BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 120 --verbose"
-BOOT_WAIT=600
+EXPECT=package
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 120"
+MANIFEST_CHECK='(.Program | test("apache2$"))'

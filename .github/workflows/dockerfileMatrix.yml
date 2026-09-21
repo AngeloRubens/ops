@@ -101,7 +101,9 @@ jobs:
           # the same, carried whole, to tell what pruning stops from what it does not
           - quarkus-resolved-whole
           - memcached-resolved-whole
-          - wordpress-resolved-whole
+          # wordpress in the shape that runs: one php process serving it, and no apache in front
+          # making workers with fork
+          - wordpress-php
           # the same images, asked what they start instead of read
           - wildfly-resolved
           - wildfly-interpreted
