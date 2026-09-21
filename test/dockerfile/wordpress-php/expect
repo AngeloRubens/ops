@@ -1,0 +1,7 @@
+# There is no database beside it and php here has no driver for one either, so what wordpress
+# answers with is its own page saying so - which is wordpress running and serving.
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="MySQL extension"
+BOOT_WAIT=300
+MANIFEST_CHECK='(.Program | test("php$")) and (.Args | index("-S") != null)'

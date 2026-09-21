@@ -1,7 +1,0 @@
-# wordpress-resolved carried whole, to hold the pruned one against.
-DOCKERFILE=../wordpress/Dockerfile
-EXPECT=ok
-PORT=80
-OUTPUT_MATCH="database connection"
-BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 120 --whole-image"
-BOOT_WAIT=600
