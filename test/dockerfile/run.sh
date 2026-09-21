@@ -192,4 +192,9 @@ else
         fail "the program did not print what it should (wanted: $OUTPUT_MATCH)"
 fi
 
+# what boots, weighed: the image ops built out of the package
+image="$(basename "$(jq -r '.Program' "$manifest")")"
+size="$(du -m "$HOME/.ops/images/$image" 2>/dev/null | cut -f1)"
+[ -n "$size" ] && echo "the machine image is $size MB"
+
 echo "PASS $scenario"

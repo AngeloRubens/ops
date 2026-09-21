@@ -206,6 +206,8 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	}
 
 	reportIgnored(config.User, config.Healthcheck, config.Volumes)
+	// what the image weighs beside what the package does, since the difference is the point
+	fmt.Printf("the image docker built is %d MB\n", inspected.Size/(1024*1024))
 	reportContents(sysroot)
 
 	manifest, err := json.MarshalIndent(c, "", "  ")
