@@ -123,7 +123,7 @@ fi
 [ $built -eq 0 ] || fail "the package could not be built"
 
 # how much of the image the package carries, and what was left out of its operating system
-grep -E '^(the file system is|left out|kept|warning: |the image starts|reading |the container)' "$log"
+grep -E '^(the image docker built|the file system is|left out|kept|warning: |the image starts|reading |the container)' "$log"
 
 manifest="$HOME/.ops/local_packages/$arch/$pkg/package.manifest"
 [ -f "$manifest" ] || fail "no manifest at $manifest"
