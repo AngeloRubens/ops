@@ -134,7 +134,10 @@ if [ -n "$PORT" ]; then
     answer=""
     for _ in $(seq 1 "$BOOT_WAIT"); do
         answer="$(curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null)"
-        [ -n "$answer" ] && break
+        # a server that is not ready can answer all the same - traefik says "404 page not found"
+        # while it is still reading its configuration - so what is waited for is the answer that was
+        # asked for rather than the first one to arrive
+        printf '%s' "$answer" | grep -q -- "$OUTPUT_MATCH" && break
         sleep 2
     done
 
