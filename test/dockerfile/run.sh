@@ -73,6 +73,10 @@ fail() {
     # the ones a container runtime makes is worth seeing
     ls -la "$HOME/.ops/local_packages/$arch/$pkg/sysroot/run" \
         "$HOME/.ops/local_packages/$arch/$pkg/sysroot/var/run" 2>&1 | head -24
+    # a jvm on red hat reads its java.security, which ends by including a file under
+    # /etc/crypto-policies/back-ends - itself a link into /usr/share - so both ends are worth seeing
+    ls -la "$HOME/.ops/local_packages/$arch/$pkg/sysroot/etc/crypto-policies/back-ends" 2>&1 | head -8
+    ls "$HOME/.ops/local_packages/$arch/$pkg/sysroot/usr/share/crypto-policies" 2>&1 | head -6
     # and what of them reached the image, which is a different question: the image is named after
     # the program it starts
     if [ -f "${manifest:-}" ]; then
@@ -85,10 +89,13 @@ fail() {
     if [ -s "$boot" ]; then
         # a server says why it never came up in its first lines, and a machine that is up but
         # answers nothing says it in its last: both are worth keeping
+        # the image builder says a word about every link left pointing at something the pruning
+        # took, and there are hundreds of them: they are skipped, and they would fill the window
+        # where the program says why it never came up
         echo "--- what the unikernel said first ---"
-        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$" | head -40
+        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$|^warning: stat " | head -40
         echo "--- and last ---"
-        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$" | tail -200
+        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$|^warning: stat " | tail -200
     else
         echo "--- last of the log ---"
         tail -30 "$log"
