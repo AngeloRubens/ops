@@ -35,6 +35,18 @@ func addDummyKlib(m *Manifest, name string) {
 	klibDir[name] = "dummy"
 }
 
+func TestAddLinkFindsWhatTheLinkNamesInThePackage(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "sysroot")
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "usr", "share"), 0755))
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "etc"), 0755))
+	assert.NoError(t, os.WriteFile(filepath.Join(root, "usr", "share", "ops-policy.txt"), []byte("x\n"), 0644))
+	assert.NoError(t, os.Symlink("/usr/share/ops-policy.txt", filepath.Join(root, "etc", "absolute")))
+
+	// nothing of that name is on the machine building it, and the link is good all the same
+	m := NewManifest("")
+	assert.NoError(t, m.AddLink("etc/absolute", filepath.Join(root, "etc", "absolute")))
+}
+
 func TestManifestWithArgs(t *testing.T) {
 	m := NewManifest("")
 	m.AddArgument("/bin/ls")
