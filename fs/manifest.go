@@ -209,6 +209,26 @@ func resetPath(opath string) {
 // opath is currently passed in only because of this chdir call which
 // gets cleaned up afterwards; should look at removing that in the
 // future.
+// LinkTargetExists reports whether what a link points at is there, reading the link the way the
+// system that will use it does: an absolute target inside a package names a path in that package,
+// which is not where the same path lies on the machine building it. What it finds is not followed
+// any further, so a link onto another link is answered for by that one in its turn.
+func LinkTargetExists(hostpath string, root string) bool {
+	target, err := os.Readlink(hostpath)
+	if err != nil {
+		return false
+	}
+
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(hostpath), target)
+	} else if root != "" {
+		target = filepath.Join(root, target)
+	}
+
+	_, err = os.Lstat(target)
+	return err == nil
+}
+
 func (m *Manifest) AddDirectory(dir string, workDir string, opath string, insidepkg bool) error {
 	// if we can just nuke this we should; calling AddDirectory multiple
 	// times w/a mix of abs/relative blows things up
@@ -231,9 +251,16 @@ func (m *Manifest) AddDirectory(dir string, workDir string, opath string, inside
 		}
 
 		if (info.Mode() & os.ModeSymlink) != 0 {
-			info, err = os.Stat(hostpath)
-			if err != nil {
-				fmt.Printf("warning: %v\n", err)
+			// A link inside a package points at the package: an absolute target names a path in
+			// the image being built rather than one on the machine building it, and looking for it
+			// here threw away everything a package keeps that way - a jvm on red hat reads its
+			// java.security through one of them.
+			root := ""
+			if insidepkg {
+				root = strings.Split(hostpath, "sysroot/")[0] + "sysroot"
+			}
+			if !LinkTargetExists(hostpath, root) {
+				fmt.Printf("warning: %s points at nothing in the package\n", vmpath)
 				// ignore invalid symlinks
 				return nil
 			}

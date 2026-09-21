@@ -178,8 +178,9 @@ func addFilesFromPackage(packagepath string, m *fs.Manifest, ppath string) {
 		// a merged /usr leaves /bin, /lib and /sbin as links to their counterparts under /usr,
 		// so the top of a file system taken from a container image is full of them
 		if e.Type()&os.ModeSymlink != 0 {
-			if _, err := os.Stat(hostpath); err != nil {
-				fmt.Printf("warning: %v\n", err)
+			// what it points at is looked for in the package, since that is where it will be read
+			if !fs.LinkTargetExists(hostpath, rootPath) {
+				fmt.Printf("warning: %s points at nothing in the package\n", e.Name())
 				continue
 			}
 			err = m.AddLink(e.Name(), hostpath)
