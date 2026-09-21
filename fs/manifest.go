@@ -386,6 +386,14 @@ func (m *Manifest) AddLink(filepath string, hostpath string) error {
 	}
 
 	_, err := LookupFile(m.targetRoot, hostpath)
+	if err != nil && os.IsNotExist(err) {
+		// A link carried in a package points at the package, so what it names is looked for there
+		// before this is given up on: on the machine building it the same name means something
+		// else, or nothing.
+		if root, _, found := strings.Cut(hostpath, "sysroot/"); found {
+			_, err = LookupFile(root+"sysroot", "/"+filepath)
+		}
+	}
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("file %q is missing: %w", hostpath, err)
