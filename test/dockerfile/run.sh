@@ -73,8 +73,21 @@ fail() {
     # the ones a container runtime makes is worth seeing
     ls -la "$HOME/.ops/local_packages/$arch/$pkg/sysroot/run" \
         "$HOME/.ops/local_packages/$arch/$pkg/sysroot/var/run" 2>&1 | head -24
+    # and what of them reached the image, which is a different question: the image is named after
+    # the program it starts
+    if [ -f "${manifest:-}" ]; then
+        image="$(basename "$(jq -r '.Program' "$manifest")")"
+        for dir in /var /var/run /run; do
+            echo "--- image $image $dir"
+            "$ops" image ls "$image" "$dir" 2>&1 | head -12
+        done
+    fi
     if [ -s "$boot" ]; then
-        echo "--- last of what the unikernel said ---"
+        # a server says why it never came up in its first lines, and a machine that is up but
+        # answers nothing says it in its last: both are worth keeping
+        echo "--- what the unikernel said first ---"
+        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$" | head -40
+        echo "--- and last ---"
         tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$" | tail -200
     else
         echo "--- last of the log ---"
