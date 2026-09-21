@@ -3,5 +3,8 @@
 EXPECT=ok
 PORT=8080
 OUTPUT_MATCH="MySQL extension"
+# the php image wraps whatever it is given in an entrypoint script of its own, so what it starts is
+# asked of it rather than read
+BUILD_FLAGS="--resolve-entrypoint"
 BOOT_WAIT=300
 MANIFEST_CHECK='(.Program | test("php$")) and (.Args | index("-S") != null)'
