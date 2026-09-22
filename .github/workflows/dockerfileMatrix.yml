@@ -144,6 +144,17 @@ jobs:
           - prometheus
           - coredns
           - traefik
+          # the applications the nanos package repository publishes, taken here from the images
+          # their own authors ship rather than from the packages: what goes through untouched says
+          # how far this reaches beyond the shapes we picked ourselves
+          - bind
+          - loki
+          - nats
+          - influxdb-resolved
+          - cockroach-resolved
+          - envoy-resolved
+          - deno
+          - bun
     steps:
       - uses: actions/checkout@v4
 

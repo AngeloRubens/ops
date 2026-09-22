@@ -1,0 +1,4 @@
+# named speaks dns rather than http, so what says it is up is what it writes on the console.
+EXPECT=ok
+OUTPUT_MATCH="running"
+BOOT_WAIT=300

@@ -1,0 +1,6 @@
+# /health answers the same brace whether the node is ready or not, so what says it came up is the
+# banner it prints once it has: that is a line no half started node writes.
+EXPECT=ok
+OUTPUT_MATCH="CockroachDB node starting"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 180"
+BOOT_WAIT=300

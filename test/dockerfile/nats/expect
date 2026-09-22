@@ -1,0 +1,5 @@
+# /varz is what nats answers with its own identity, and it is served from the monitoring port.
+EXPECT=ok
+PORT=8222
+URL_PATH="/varz"
+OUTPUT_MATCH="server_id"

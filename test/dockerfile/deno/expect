@@ -1,0 +1,5 @@
+# A javascript runtime that is one process and serves what it is told to.
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="deno is serving"
+BOOT_WAIT=300

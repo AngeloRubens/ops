@@ -1,0 +1,7 @@
+# One go process, reading the configuration the image ships. /ready answers once it has replayed
+# its write ahead log, which is what says it is up rather than merely listening.
+EXPECT=ok
+PORT=3100
+URL_PATH="/ready"
+OUTPUT_MATCH="ready"
+BOOT_WAIT=300
