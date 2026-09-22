@@ -1,0 +1,6 @@
+# One javascript process, behind the image's entrypoint script.
+EXPECT=ok
+PORT=8080
+OUTPUT_MATCH="bun is serving"
+BUILD_FLAGS="--resolve-entrypoint"
+BOOT_WAIT=300

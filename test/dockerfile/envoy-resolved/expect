@@ -1,0 +1,6 @@
+# What is asserted is envoy's own answer, not merely that a port was opened.
+EXPECT=ok
+PORT=10000
+OUTPUT_MATCH="envoy is serving"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 120"
+BOOT_WAIT=300

@@ -1,0 +1,7 @@
+# /health is answered before any setup is done, and says which of the two it is.
+EXPECT=ok
+PORT=8086
+URL_PATH="/health"
+OUTPUT_MATCH="pass"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 180"
+BOOT_WAIT=300
