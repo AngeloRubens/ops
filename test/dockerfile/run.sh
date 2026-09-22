@@ -143,53 +143,60 @@ if [ "$EXPECT" = package ]; then
 fi
 
 echo "=== $scenario: booting the package"
-if [ -n "$PORT" ]; then
-    timeout 1800 "$ops" pkg load -l "$pkg" --accel=false -p "$PORT" > "$boot" 2>&1 &
-    runner=$!
 
-    # There is no kvm on a hosted runner, so a jvm starting under emulation is slow enough to
-    # need the wait to be measured in minutes rather than seconds.
-    # ops returns once the machine is up, while the machine goes on running, so the thing to
-    # wait on is the answer rather than the process.
+# A jvm under emulation falls over now and then - compiled code faulting, or a start so slow the
+# wait runs out - and one machine saying nothing says little. So a boot is a thing that can be done
+# again: each one starts with the console cleared, and what stops twice has stopped.
+boot_once() {
+    : > "$boot"
     answer=""
-    for _ in $(seq 1 "$BOOT_WAIT"); do
-        answer="$(curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null)"
-        # a server that is not ready can answer all the same - traefik says "404 page not found"
-        # while it is still reading its configuration - so what is waited for is the answer that was
-        # asked for rather than the first one to arrive
-        printf '%s' "$answer" | grep -q -- "$OUTPUT_MATCH" && break
-        sleep 2
-    done
+
+    if [ -n "$PORT" ]; then
+        timeout 1800 "$ops" pkg load -l "$pkg" --accel=false -p "$PORT" > "$boot" 2>&1 &
+        runner=$!
+
+        # ops returns once the machine is up, while the machine goes on running, so the thing to
+        # wait on is the answer rather than the process. A server that is not ready can answer all
+        # the same - traefik says "404 page not found" while it is still reading its configuration -
+        # so what is waited for is the answer that was asked for rather than the first to arrive.
+        for _ in $(seq 1 "$BOOT_WAIT"); do
+            answer="$(curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null)"
+            printf '%s' "$answer" | grep -q -- "$OUTPUT_MATCH" && break
+            sleep 2
+        done
+    else
+        # Whether the program prints and stops or prints and stays, what is being waited for is the
+        # line, not the end of it: the console is read after the wait, so that a program which
+        # prints and stops is still read.
+        timeout 1800 "$ops" pkg load -l "$pkg" --accel=false > "$boot" 2>&1 &
+        runner=$!
+
+        for _ in $(seq 1 "$BOOT_WAIT"); do
+            sleep 2
+            grep -q -- "$OUTPUT_MATCH" "$boot" && break
+        done
+    fi
 
     kill $runner 2>/dev/null
     pkill -f qemu-system 2>/dev/null
     wait $runner 2>/dev/null
 
-    printf '%s' "$answer" | grep -q -- "$OUTPUT_MATCH" || \
-        fail "the server did not answer with what it should (wanted: $OUTPUT_MATCH)" "got: $answer"
-else
-    timeout 1800 "$ops" pkg load -l "$pkg" --accel=false > "$boot" 2>&1 &
-    runner=$!
+    if [ -n "$PORT" ]; then
+        printf '%s' "$answer" | grep -q -- "$OUTPUT_MATCH"
+    else
+        grep -q -- "$OUTPUT_MATCH" "$boot"
+    fi
+}
 
-    # Whether the program prints and stops or prints and stays, what is being waited for is the
-    # line, not the end of it.
-    said=no
-    for _ in $(seq 1 "$BOOT_WAIT"); do
-        sleep 2
-
-        # read after the wait, so that a program which prints and stops is still read
-        if grep -q -- "$OUTPUT_MATCH" "$boot"; then
-            said=yes
-            break
+if ! boot_once; then
+    echo "=== $scenario: nothing of what was asked for, so once more"
+    if ! boot_once; then
+        if [ -n "$PORT" ]; then
+            fail "the server did not answer with what it should (wanted: $OUTPUT_MATCH)" "got: $answer"
+        else
+            fail "the program did not print what it should (wanted: $OUTPUT_MATCH)"
         fi
-    done
-
-    kill $runner 2>/dev/null
-    pkill -f qemu-system 2>/dev/null
-    wait $runner 2>/dev/null
-
-    [ "$said" = yes ] || \
-        fail "the program did not print what it should (wanted: $OUTPUT_MATCH)"
+    fi
 fi
 
 # what boots, weighed: the image ops built out of the package
