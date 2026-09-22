@@ -265,10 +265,11 @@ func (m *Manifest) AddDirectory(dir string, workDir string, opath string, inside
 				return nil
 			}
 
-			// add link and continue on
-			err = m.AddLink(vmpath, hostpath)
-			if err != nil {
-				return err
+			// add link and continue on. A link onto another link can still end on something the
+			// pruning took, and such a name is left out rather than refused: an image is none the
+			// worse for a name that leads nowhere, and was built without them before.
+			if err := m.AddLink(vmpath, hostpath); err != nil {
+				fmt.Printf("warning: %s is left out: %v\n", vmpath, err)
 			}
 
 			return nil

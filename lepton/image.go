@@ -183,7 +183,10 @@ func addFilesFromPackage(packagepath string, m *fs.Manifest, ppath string) {
 				fmt.Printf("warning: %s points at nothing in the package\n", e.Name())
 				continue
 			}
-			err = m.AddLink(e.Name(), hostpath)
+			if err := m.AddLink(e.Name(), hostpath); err != nil {
+				fmt.Printf("warning: %s is left out: %v\n", e.Name(), err)
+			}
+			continue
 		} else if e.IsDir() {
 			err = m.AddDirectory(hostpath, hostpath, ppath, true)
 		} else {
