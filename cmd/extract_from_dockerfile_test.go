@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	dockerContainer "github.com/docker/docker/api/types/container"
@@ -335,6 +336,12 @@ func TestWriteMachineFilesCountsTheProcessors(t *testing.T) {
 	possible, err := os.ReadFile(filepath.Join(root, "sys", "devices", "system", "cpu", "possible"))
 	assert.NoError(t, err)
 	assert.Equal(t, "0-63\n", string(possible))
+
+	// the fourteen the kernel documents as mandatory, which is what a reader parses before it
+	// looks at whose device the line is
+	diskstats, err := os.ReadFile(filepath.Join(root, "proc", "diskstats"))
+	assert.NoError(t, err)
+	assert.Len(t, strings.Fields(string(diskstats)), 14)
 }
 
 func TestWriteMachineFilesLeavesTheKernelToAnswerOnArm(t *testing.T) {
