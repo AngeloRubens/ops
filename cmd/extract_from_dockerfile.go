@@ -908,9 +908,17 @@ func writeMachineFiles(sysroot string, arch string) error {
 	// processor it runs on - while a number above it costs only memory never used, so it says what
 	// no machine will go beyond. What the machine really has, the kernel answers itself in
 	// "online", and a program that wants the truth has it there.
+	// A datastore watches the disk its store sits on and will not start without somewhere to read
+	// about it: cockroach opens diskstats while it is making its engines, and the open failing is
+	// what stops it. A reader finds its own disk by the device the store is on and passes over
+	// every other line, and here that device is zero, since the kernel answers zero for everything
+	// it is asked to describe - so the line is written as that device rather than as an invented
+	// one, and its counters are all zero, which says a disk that has done nothing rather than a
+	// disk that has done something untrue.
 	machine := map[string]string{
 		"proc/cpuinfo":                    "processor\t: 0\n\n",
 		"sys/devices/system/cpu/possible": "0-63\n",
+		"proc/diskstats":                  "   0       0 vda 0 0 0 0 0 0 0 0 0 0 0\n",
 	}
 
 	for name, says := range machine {
