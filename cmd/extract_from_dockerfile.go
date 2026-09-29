@@ -915,10 +915,21 @@ func writeMachineFiles(sysroot string, arch string) error {
 	// it is asked to describe - so the line is written as that device rather than as an invented
 	// one, and its counters are all zero, which says a disk that has done nothing rather than a
 	// disk that has done something untrue.
+	// And how much processor time it has had: cockroach asks that of itself before it will serve,
+	// and stops when there is nowhere to read it - unable to get proc cpu time: no such process.
+	// The process is asked for by number, and here there is one process and its number is one, the
+	// kernel handing out process ids from one upwards. What reads the line splits it on spaces and
+	// reaches for the fourteenth, fifteenth and twenty-second words without first counting how
+	// many there are, so a line shorter than twenty-two words is not an error to it but a fall, and
+	// the name in the second word is written without a space for the same reason. The times are
+	// zero, which is a thing that becomes untrue the moment the process runs; a program measuring
+	// how hard it is working will read that it is not, and one that divides by the time it thinks
+	// has passed is the case to watch.
 	machine := map[string]string{
 		"proc/cpuinfo":                    "processor\t: 0\n\n",
 		"sys/devices/system/cpu/possible": "0-63\n",
 		"proc/diskstats":                  "   0       0 vda 0 0 0 0 0 0 0 0 0 0 0\n",
+		"proc/1/stat":                     "1 (program) R 0 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 0\n",
 	}
 
 	for name, says := range machine {
