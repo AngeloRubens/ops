@@ -342,6 +342,15 @@ func TestWriteMachineFilesCountsTheProcessors(t *testing.T) {
 	diskstats, err := os.ReadFile(filepath.Join(root, "proc", "diskstats"))
 	assert.NoError(t, err)
 	assert.Len(t, strings.Fields(string(diskstats)), 14)
+
+	// a reader of this one reaches for the twenty-second word without counting the words first, so
+	// what is checked is that they are there to be reached for, and that the name is one word
+	stat, err := os.ReadFile(filepath.Join(root, "proc", "1", "stat"))
+	assert.NoError(t, err)
+	words := strings.Fields(string(stat))
+	assert.GreaterOrEqual(t, len(words), 22)
+	assert.Equal(t, "1", words[0])
+	assert.Equal(t, "(program)", words[1])
 }
 
 func TestWriteMachineFilesLeavesTheKernelToAnswerOnArm(t *testing.T) {
