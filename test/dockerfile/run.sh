@@ -93,9 +93,9 @@ fail() {
         # took, and there are hundreds of them: they are skipped, and they would fill the window
         # where the program says why it never came up
         echo "--- what the unikernel said first ---"
-        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$|^warning: stat " | head -40
+        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$|^warning: stat |points at nothing|is left out:" | head -40
         echo "--- and last ---"
-        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$|^warning: stat " | tail -200
+        tr '\r' '\n' < "$boot" | grep -vE "^ *[0-9]+% \||^ *$|^warning: stat |points at nothing|is left out:" | tail -200
     else
         echo "--- last of the log ---"
         tail -30 "$log"
