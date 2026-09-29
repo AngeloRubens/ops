@@ -81,7 +81,11 @@ fail() {
     # the program it starts
     if [ -f "${manifest:-}" ]; then
         image="$(basename "$(jq -r '.Program' "$manifest")")"
-        for dir in /var /var/run /run; do
+        # what a program is told about itself is read out of a directory named after its process
+        # number, so both the directory and what is under it are worth seeing: a program that finds
+        # neither says the process does not exist, which is the same thing it says when the file is
+        # simply somewhere else
+        for dir in /var /var/run /run /proc /proc/1 /proc/2; do
             echo "--- image $image $dir"
             "$ops" image ls "$image" "$dir" 2>&1 | head -12
         done
