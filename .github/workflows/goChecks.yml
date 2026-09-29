@@ -1,0 +1,45 @@
+name: Checks (gofmt, vet, unit tests)
+
+# What the matrix does before it boots anything, on its own and on every branch. The matrix is an
+# hour of machines being started, so asking it whether the code compiles is a slow way to find out
+# and a wasteful one. This answers that question in a couple of minutes, which is what makes it
+# possible to work on a branch without a go on the machine the work is done on.
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: gofmt, vet, unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l cmd/)
+          if [ -n "$unformatted" ]; then
+            echo "::error::not gofmt'd: $unformatted"
+            gofmt -d cmd/
+            exit 1
+          fi
+
+      - name: vet
+        run: go vet ./cmd/... ./lepton/... ./types/...
+
+      # by name, the same way the matrix names them: the rest of the tests in cmd build images and
+      # want a hypervisor on the path, which is a state of that package rather than of this work
+      - name: test
+        run: |
+          go test ./fs/... -count 1 -run 'LinkTargetExists|AddLink'
+          go test ./cmd/... -count 1 -run 'EntrypointArgv|ResolveInRoot|ResolveProgram|MainProgram|ExposedPorts|Environment|WriteHosts|VolumeSize|IsKernelPath|ResolveBuildContext|StatusField|WalkInRoot|PackageOwners|LeaveOutTheOperatingSystem|LibraryDirs|FindLibrary|MappedPaths|NamedIn|OpenedByName|RpmSource|NssServices|ExactArgv|ListeningIn|WriteMachineFiles'
+
+      - name: build
+        run: go build -o ops -v
