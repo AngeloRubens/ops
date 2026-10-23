@@ -8,11 +8,6 @@ on:
   push:
     branches: [feat/from-dockerfile]
   workflow_dispatch:
-    inputs:
-      scenarios:
-        description: 'comma separated scenarios to run, all of them when empty'
-        required: false
-        default: ''
 
 jobs:
   build:
@@ -56,7 +51,6 @@ jobs:
   scenario:
     name: ${{ matrix.scenario }}
     needs: build
-    if: github.event_name != 'workflow_dispatch' || inputs.scenarios == '' || contains(format(',{0},', inputs.scenarios), format(',{0},', matrix.scenario))
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:

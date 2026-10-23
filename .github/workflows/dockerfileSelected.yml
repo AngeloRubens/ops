@@ -1,0 +1,50 @@
+name: Dockerfile support (chosen scenarios)
+
+# The scenarios of dockerfileMatrix.yml that are named, rather than all of them.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: 'JSON array of scenarios, e.g. ["temurin","openliberty"]'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build -o ops -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ops
+          path: ops
+
+  scenario:
+    name: ${{ matrix.scenario }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ fromJSON(inputs.scenarios) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ops
+      - name: Install qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86
+          sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+      - name: Run the scenario
+        run: |
+          chmod +x ops test/dockerfile/run.sh
+          export OPS="$PWD/ops"
+          ./test/dockerfile/run.sh ${{ matrix.scenario }}
