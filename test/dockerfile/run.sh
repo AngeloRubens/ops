@@ -62,6 +62,7 @@ esac
 
 pkg="dockerfile-test-$scenario"
 log="$(mktemp)"
+cfg="$(mktemp)"
 boot="$(mktemp)"
 trap 'rm -f "$log" "$boot"' EXIT
 
@@ -109,7 +110,7 @@ fail() {
 
 echo "=== $scenario: from-dockerfile"
 # shellcheck disable=SC2086
-"$ops" pkg from-dockerfile "$dir/$DOCKERFILE" --name "$pkg" $BUILD_FLAGS > "$log" 2>&1
+"$ops" pkg from-dockerfile "$dir/$DOCKERFILE" --name "$pkg" --config-out "$cfg" $BUILD_FLAGS > "$log" 2>&1
 built=$?
 
 if [ "$EXPECT" = refuse ]; then
@@ -133,6 +134,13 @@ manifest="$HOME/.ops/local_packages/$arch/$pkg/package.manifest"
 [ -f "$manifest" ] || fail "no manifest at $manifest"
 echo "--- manifest ---"
 cat "$manifest"
+
+# the ops config the command leaves for building the image: the same program and arguments
+if [ "$(jq -r .Program < "$cfg" 2>/dev/null)" != "$(jq -r .Program < "$manifest")" ] ||
+   [ "$(jq -c .Args < "$cfg" 2>/dev/null)" != "$(jq -c .Args < "$manifest")" ]; then
+    fail "the ops config written to $cfg does not match the manifest"
+fi
+echo "ops config: $(jq -c '{Program,Args}' < "$cfg")"
 
 if [ -n "$MANIFEST_CHECK" ]; then
     if [ "$(jq "$MANIFEST_CHECK" < "$manifest")" != "true" ]; then

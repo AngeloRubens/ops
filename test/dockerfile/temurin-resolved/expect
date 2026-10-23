@@ -1,0 +1,5 @@
+# The official Eclipse Temurin JDK image, asked what its entrypoint script starts. With no command
+# given the image runs jshell, so that is what the package has to name.
+DOCKERFILE=../temurin/upstream/21/jdk/ubuntu/noble/Dockerfile
+EXPECT=package
+BUILD_FLAGS="--resolve-entrypoint"

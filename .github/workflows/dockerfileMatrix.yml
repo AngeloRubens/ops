@@ -84,6 +84,7 @@ jobs:
           - wildfly
           - glassfish
           - openliberty
+          - temurin
           - payara
           - activemq
           - rocketmq
@@ -92,6 +93,7 @@ jobs:
           - tomee-resolved
           - glassfish-resolved
           - openliberty-resolved
+          - temurin-resolved
           - activemq-resolved
           - rocketmq-resolved
           - traefik-resolved

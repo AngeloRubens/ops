@@ -123,4 +123,5 @@ each change:
 | `--resolve-entrypoint` | run the image to see what it starts |
 | `--resolve-timeout` | seconds to watch it for, 60 by default |
 | `--keep-image` | keep the docker image the build produces |
+| `--config-out` | where to write the ops config file, `<name>.config.json` by default |
 | `--whole-image` | carry the whole file system of the image, operating system and all |
