@@ -1,13 +1,10 @@
 name: Dockerfile support (chosen scenarios)
 
-# The scenarios of dockerfileMatrix.yml that are named, rather than all of them.
+# The scenarios of dockerfileMatrix.yml that are being worked on, rather than all of them.
 
 on:
-  workflow_dispatch:
-    inputs:
-      scenarios:
-        description: 'JSON array of scenarios, e.g. ["temurin","openliberty"]'
-        required: true
+  push:
+    branches: [feat/from-dockerfile]
 
 jobs:
   build:
@@ -32,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ fromJSON(inputs.scenarios) }}
+        scenario: [temurin, temurin-resolved, openliberty, openliberty-resolved]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
