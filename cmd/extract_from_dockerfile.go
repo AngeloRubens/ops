@@ -71,6 +71,10 @@ type DockerfileOptions struct {
 
 	// WholeImage carries the file system of the image as it is, operating system and all.
 	WholeImage bool
+
+	// ConfigOut is where the ops config file for building an image out of the package is
+	// written, <package name>.config.json in the current directory when empty.
+	ConfigOut string
 }
 
 // BuildFromDockerfile builds a Dockerfile into a docker image and turns that image into a
@@ -220,6 +224,18 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 
 	packageDirectory := MovePackageFiles(tempDirectory,
 		filepath.Join(api.LocalPackagesRoot, opts.Arch, opts.PackageName))
+
+	configOut := opts.ConfigOut
+	if configOut == "" {
+		configOut = opts.PackageName + ".config.json"
+	}
+	if err := os.WriteFile(configOut, manifest, 0666); err != nil {
+		return "", "", err
+	}
+	if !opts.Quiet {
+		fmt.Printf("the ops config is %s; build the image with: ops image create -c %s --package %s\n",
+			configOut, configOut, opts.PackageName)
+	}
 
 	return opts.PackageName, packageDirectory, nil
 }

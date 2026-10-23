@@ -1,0 +1,5 @@
+# The official Eclipse Temurin JRE image, from the repository that publishes it. Its entrypoint is
+# a script of its own and it carries no program, so what is asked is that the package is made,
+# with the ops config beside it, and says what the image declares.
+DOCKERFILE=upstream/21/jre/ubuntu/noble/Dockerfile
+EXPECT=package
