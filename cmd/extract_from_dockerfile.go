@@ -124,7 +124,8 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 
 	argv, argvErr := entrypointArgv(config.Entrypoint, config.Cmd)
 	ran, runsAs, runsAsGroup := "", "", ""
-	var mapped, touched []string
+	var mapped []string
+	var trace []byte
 	if opts.Resolve {
 		var tr *tracer
 		if !opts.NoTrace {
@@ -161,7 +162,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 			config.Env = append(config.Env, found.env...)
 			runsAs, runsAsGroup = found.uid, found.gid
 			mapped = found.mapped
-			touched = found.touched
+			trace = found.trace
 		}
 	}
 	if argvErr != nil {
@@ -200,6 +201,11 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	if opts.WholeImage {
 		fmt.Println("the whole file system of the image is carried, operating system and all")
 	} else {
+		// only what the program and the processes it made opened, not the tools of its launcher
+		touched := touchedPaths(trace, config.WorkingDir, []string{program})
+		if len(trace) > 0 && opts.Verbose {
+			fmt.Printf("watched the program open %d files\n", len(touched))
+		}
 		leaveOutTheOperatingSystem(sysroot, program, mapped, config.Env, touched)
 	}
 	discardWhatCannotBeReached(sysroot)
@@ -474,8 +480,8 @@ type started struct {
 	id     string
 	mapped []string
 
-	// the files the program opened, when it was watched
-	touched []string
+	// what strace wrote down about the files opened, when the program was watched
+	trace []byte
 }
 
 func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
@@ -512,10 +518,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 			return
 		}
 		time.Sleep(3 * time.Second)
-		found.touched = tr.touched(workingDir)
-		if verbose {
-			fmt.Printf("watched the program open %d files\n", len(found.touched))
-		}
+		found.trace = tr.trace()
 	}
 
 	if err := cli.ContainerStart(ctx, created.ID, dockerContainer.StartOptions{}); err != nil {
