@@ -861,6 +861,7 @@ func fromDockerfileCommand() *cobra.Command {
 	persistentFlags.Bool("resolve-entrypoint", false, "run the image to see what it starts, for an image whose entrypoint is a launcher script")
 	persistentFlags.Int("resolve-timeout", 60, "seconds to watch the image for")
 	persistentFlags.Bool("whole-image", false, "carry the whole file system of the image, operating system and all")
+	persistentFlags.Bool("no-trace", false, "with --resolve-entrypoint, do not watch which files the program opens, and carry what it is linked against instead")
 	persistentFlags.String("config-out", "", "where to write the ops config file (defaults to <name>.config.json)")
 
 	return cmdFromDockerfile
@@ -902,6 +903,7 @@ func fromDockerfileCommandHandler(cmd *cobra.Command, args []string) {
 	contextDir, _ := flags.GetString("context")
 	target, _ := flags.GetString("target")
 	configOut, _ := flags.GetString("config-out")
+	noTrace, _ := flags.GetBool("no-trace")
 
 	rawArgs, err := flags.GetStringArray("build-arg")
 	if err != nil {
@@ -929,6 +931,7 @@ func fromDockerfileCommandHandler(cmd *cobra.Command, args []string) {
 
 		WholeImage: wholeImage,
 		ConfigOut:  configOut,
+		NoTrace:    noTrace,
 	})
 	if err != nil {
 		exitWithError(err.Error())

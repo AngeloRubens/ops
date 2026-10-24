@@ -14,6 +14,9 @@
 #   BOOT_WAIT        how many two second turns to wait for the unikernel, 240 by default
 #   BUILD_FLAGS      extra flags for 'ops pkg from-dockerfile'
 #   MANIFEST_CHECK   a jq filter over the manifest that has to hold
+#   SYSROOT_ABSENT   paths, relative to the root of the package, that have to be left out of it
+#   SYSROOT_PRESENT  paths that have to be in it
+#   SYSROOT_MAX_MB   the most the file system of the package may weigh
 
 set -u
 
@@ -41,6 +44,9 @@ URL_PATH="/"
 BOOT_WAIT=240
 BUILD_FLAGS=""
 MANIFEST_CHECK=""
+SYSROOT_ABSENT=""
+SYSROOT_PRESENT=""
+SYSROOT_MAX_MB=""
 # shellcheck disable=SC1091
 . "$dir/expect"
 
@@ -147,6 +153,19 @@ if [ -n "$MANIFEST_CHECK" ]; then
         fail "the manifest does not hold: $MANIFEST_CHECK"
     fi
     echo "manifest: $MANIFEST_CHECK holds"
+fi
+
+root="$HOME/.ops/local_packages/$arch/$pkg/sysroot"
+for p in $SYSROOT_ABSENT; do
+    [ ! -e "$root/$p" ] && [ ! -L "$root/$p" ] || fail "$p is in the package and was not needed"
+done
+for p in $SYSROOT_PRESENT; do
+    [ -e "$root/$p" ] || fail "$p is not in the package and was needed"
+done
+if [ -n "$SYSROOT_MAX_MB" ]; then
+    weight=$(du -sm "$root" | cut -f1)
+    [ "$weight" -le "$SYSROOT_MAX_MB" ] || fail "the package weighs $weight MB, more than $SYSROOT_MAX_MB"
+    echo "the package weighs $weight MB"
 fi
 
 if [ "$EXPECT" = package ]; then

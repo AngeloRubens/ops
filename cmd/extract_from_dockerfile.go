@@ -72,6 +72,10 @@ type DockerfileOptions struct {
 	// WholeImage carries the file system of the image as it is, operating system and all.
 	WholeImage bool
 
+	// NoTrace runs the image to see what it starts without watching what files it opens, which
+	// leaves the package to what the program is linked against rather than what it was seen to use.
+	NoTrace bool
+
 	// ConfigOut is where the ops config file for building an image out of the package is
 	// written, <package name>.config.json in the current directory when empty.
 	ConfigOut string
@@ -120,9 +124,22 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 
 	argv, argvErr := entrypointArgv(config.Entrypoint, config.Cmd)
 	ran, runsAs, runsAsGroup := "", "", ""
-	var mapped []string
+	var mapped, touched []string
 	if opts.Resolve {
-		found, err := resolveByRunning(ctx, cli, tag, opts.ResolveTimeout, opts.Verbose)
+		var tr *tracer
+		if !opts.NoTrace {
+			tr, err = prepareTracer(ctx, cli, opts.Verbose)
+			if err != nil {
+				fmt.Printf("warning: could not set up strace, so the files the program opens are not "+
+					"watched: %v\n", err)
+				tr = nil
+			} else {
+				defer tr.remove()
+			}
+		}
+
+		found, err := resolveByRunning(ctx, cli, tag, opts.ResolveTimeout, opts.Verbose, tr,
+			config.Entrypoint, config.Cmd, config.WorkingDir)
 		if found != nil {
 			ran = found.id
 		}
@@ -144,6 +161,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 			config.Env = append(config.Env, found.env...)
 			runsAs, runsAsGroup = found.uid, found.gid
 			mapped = found.mapped
+			touched = found.touched
 		}
 	}
 	if argvErr != nil {
@@ -162,6 +180,11 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		return "", "", err
 	}
 
+	// what the run needed to watch the program, and what a container leaves about itself
+	for _, leftover := range []string{traceMount, ".dockerenv", ".rock"} {
+		os.RemoveAll(filepath.Join(sysroot, leftover))
+	}
+
 	if err := writeHosts(sysroot); err != nil {
 		return "", "", err
 	}
@@ -177,7 +200,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	if opts.WholeImage {
 		fmt.Println("the whole file system of the image is carried, operating system and all")
 	} else {
-		leaveOutTheOperatingSystem(sysroot, program, mapped, config.Env)
+		leaveOutTheOperatingSystem(sysroot, program, mapped, config.Env, touched)
 	}
 	discardWhatCannotBeReached(sysroot)
 
@@ -450,20 +473,50 @@ type started struct {
 	gid    string
 	id     string
 	mapped []string
+
+	// the files the program opened, when it was watched
+	touched []string
 }
 
 func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
-	timeout time.Duration, verbose bool) (*started, error) {
+	timeout time.Duration, verbose bool, tr *tracer, entrypoint []string, cmd []string,
+	workingDir string) (*started, error) {
 	if timeout <= 0 {
 		timeout = time.Minute
 	}
 
-	created, err := cli.ContainerCreate(ctx, &dockerContainer.Config{Image: tag}, nil, nil, nil, "")
+	containerConfig := &dockerContainer.Config{Image: tag}
+	var hostConfig *dockerContainer.HostConfig
+	if tr != nil {
+		// strace stands in front of the entrypoint, and the command is left to follow it
+		containerConfig.Entrypoint = tr.wrap(entrypoint)
+		containerConfig.Cmd = cmd
+		hostConfig = &dockerContainer.HostConfig{
+			Binds:       []string{tr.bind()},
+			CapAdd:      []string{"SYS_PTRACE"},
+			SecurityOpt: []string{"seccomp=unconfined"},
+		}
+	}
+
+	created, err := cli.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
 	if err != nil {
 		return nil, err
 	}
 
 	found := &started{id: created.ID}
+
+	// what the program opened up to the moment it is taken; a little more is given to a program
+	// that has only just said it is listening, since it is still opening things
+	watched := func() {
+		if tr == nil {
+			return
+		}
+		time.Sleep(3 * time.Second)
+		found.touched = tr.touched(workingDir)
+		if verbose {
+			fmt.Printf("watched the program open %d files\n", len(found.touched))
+		}
+	}
 
 	if err := cli.ContainerStart(ctx, created.ID, dockerContainer.StartOptions{}); err != nil {
 		return found, err
@@ -501,6 +554,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 				found.uid, found.gid = whoIsRunning(pid)
 				found.env = environOf(ctx, cli, created.ID, pid, found.uid, verbose)
 				found.mapped = mappedBy(ctx, cli, created.ID, top, verbose)
+				watched()
 				return found, nil
 			}
 			continue
@@ -520,6 +574,7 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 				found.mapped = mapped
 			}
 		}
+		watched()
 		return found, nil
 	}
 
@@ -618,7 +673,8 @@ func mainProgram(top dockerContainer.TopResponse) ([]string, string) {
 	for _, pid := range pids {
 		name := filepath.Base(processes[pid].argv[0])
 		// busybox is a shell as often as not, and under s6 it always is
-		if name == "sh" || name == "bash" || name == "busybox" || name == "ps" || isSupervisor(name) {
+		if name == "sh" || name == "bash" || name == "busybox" || name == "ps" || isSupervisor(name) ||
+			isTracer(name) {
 			continue
 		}
 
@@ -1189,10 +1245,15 @@ func volumeSize(sysroot string) string {
 	return fmt.Sprintf("%dm", megabytes+megabytes/4+256)
 }
 
+// belongsToTheContainer is the variables a shell or docker puts in the environment of a process
+// for the one container it runs in: the name of the machine is the container's id, and the depth of
+// the shell and the previous directory mean nothing to a program that is not started by one.
+var belongsToTheContainer = []string{"HOSTNAME", "SHLVL", "OLDPWD", "_"}
+
 func environment(env []string) map[string]string {
 	out := map[string]string{}
 	for _, e := range env {
-		if name, value, found := strings.Cut(e, "="); found {
+		if name, value, found := strings.Cut(e, "="); found && !contains(belongsToTheContainer, name) {
 			out[name] = value
 		}
 	}

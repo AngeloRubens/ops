@@ -40,16 +40,33 @@ var alwaysKept = []string{
 
 // leaveOutTheOperatingSystem takes out of sysroot what the distribution installed and the program
 // does not reach. mapped is what the processes of the image had mapped when it was run.
-func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string, env []string) {
+//
+// When the program was watched, touched is every file it opened while it started and ran, and that
+// is what stays of the operating system, with the links that lead to it and the parts it reads by
+// name. Nothing is followed from there: a library a program was linked against and never loaded is
+// not needed, and neither are the fonts of a jvm that draws nothing.
+func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string, env []string,
+	touched []string) {
 	owners := packageOwners(sysroot)
 	if len(owners) == 0 {
 		return
 	}
 
 	r := newReach(sysroot, env)
-	r.add(program)
-	for _, p := range mapped {
-		r.add(p)
+	watched := len(touched) > 0
+	if watched {
+		r.addAsIs(program)
+		for _, p := range mapped {
+			r.addAsIs(p)
+		}
+		for _, p := range touched {
+			r.addAsIs(p)
+		}
+	} else {
+		r.add(program)
+		for _, p := range mapped {
+			r.add(p)
+		}
 	}
 
 	// What a program reads by name brings what it names in turn. On red hat nsswitch.conf is a
@@ -62,30 +79,36 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		filepath.Walk(filepath.Join(sysroot, p), func(file string, info os.FileInfo, err error) error {
 			if err == nil {
 				if inside := inSysroot(sysroot, file); inside != "" {
-					r.add(inside)
+					if watched {
+						r.addAsIs(inside)
+					} else {
+						r.add(inside)
+					}
 				}
 			}
 			return nil
 		})
 	}
-	for _, service := range nssServices(sysroot) {
-		for _, found := range r.openedByName("libnss_" + service + ".so.2") {
-			r.add(found)
-		}
-	}
-
-	// What the image carries of its own stays, and so do the libraries it was linked against.
-	filepath.Walk(sysroot, func(file string, info os.FileInfo, err error) error {
-		if err != nil || !info.Mode().IsRegular() {
-			return nil
-		}
-		if p := inSysroot(sysroot, file); p != "" {
-			if _, owned := owners[p]; !owned {
-				r.add(p)
+	if !watched {
+		for _, service := range nssServices(sysroot) {
+			for _, found := range r.openedByName("libnss_" + service + ".so.2") {
+				r.add(found)
 			}
 		}
-		return nil
-	})
+
+		// What the image carries of its own stays, and so do the libraries it was linked against.
+		filepath.Walk(sysroot, func(file string, info os.FileInfo, err error) error {
+			if err != nil || !info.Mode().IsRegular() {
+				return nil
+			}
+			if p := inSysroot(sysroot, file); p != "" {
+				if _, owned := owners[p]; !owned {
+					r.add(p)
+				}
+			}
+			return nil
+		})
+	}
 
 	// A program the distribution installed is an application all the same - nginx, postgres,
 	// apache - with modules, data and configuration it reads by name, often long after it starts.
@@ -111,6 +134,10 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		"libfontconfig.so": {"/etc/fonts", "/usr/share/fonts", "/usr/share/fontconfig"},
 	}
 	for library, trees := range readByLibraries {
+		if watched {
+			// the files of a library that was loaded are among those the program opened
+			break
+		}
 		reached := false
 		for p := range r.files {
 			if strings.HasPrefix(filepath.Base(p), library) {
@@ -504,6 +531,17 @@ func newReach(sysroot string, env []string) *reach {
 	}
 
 	return r
+}
+
+// addAsIs keeps a file and the links that lead to it, and follows nothing from it.
+func (r *reach) addAsIs(p string) {
+	resolved, links, err := walkInRoot(r.sysroot, p)
+	for _, link := range links {
+		r.files[link] = true
+	}
+	if err == nil {
+		r.files[resolved] = true
+	}
 }
 
 func (r *reach) add(p string) {
