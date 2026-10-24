@@ -206,7 +206,18 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		if len(trace) > 0 && opts.Verbose {
 			fmt.Printf("watched the program open %d files\n", len(touched))
 		}
-		leaveOutTheOperatingSystem(sysroot, program, mapped, config.Env, touched)
+		keep := []string{}
+		if wd := config.WorkingDir; wd != "" && wd != "/" {
+			keep = append(keep, wd)
+		}
+		leaveOutTheOperatingSystem(sysroot, program, mapped, config.Env, touched, keep)
+		// the places the program is started in and given as its own, which a run that left them
+		// empty has no file in
+		for _, dir := range append(keep, environment(config.Env)["HOME"]) {
+			if dir != "" && dir != "/" {
+				os.MkdirAll(filepath.Join(sysroot, dir), 0755)
+			}
+		}
 	}
 	discardWhatCannotBeReached(sysroot)
 
