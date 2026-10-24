@@ -193,6 +193,26 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		return nil
 	})
 
+	// A link that leads to what was left out leads nowhere, and a directory that held nothing else
+	// goes with it: systemd's units are links, and so is everything it enables.
+	if watched {
+		filepath.Walk(sysroot, func(file string, info os.FileInfo, err error) error {
+			if err != nil || info.Mode()&os.ModeSymlink == 0 {
+				return nil
+			}
+			p := inSysroot(sysroot, file)
+			if p == "" || r.files[p] || underAny(p, alwaysKept) {
+				return nil
+			}
+			if _, _, err := walkInRoot(sysroot, p); err != nil {
+				if os.Remove(file) == nil {
+					emptied = append(emptied, filepath.Dir(file))
+				}
+			}
+			return nil
+		})
+	}
+
 	// the directories that held nothing but what was left out, and not the ones that were empty
 	// to begin with: a program may want somewhere to write
 	sort.Slice(emptied, func(i, j int) bool { return len(emptied[i]) > len(emptied[j]) })

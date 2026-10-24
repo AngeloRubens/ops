@@ -143,7 +143,7 @@ for lib in $(ldd /usr/bin/strace | awk '/=>/ {print $3}'); do cp -Ln "$lib" /out
 func (t *tracer) wrap(entrypoint []string) []string {
 	wrapped := []string{
 		traceMount + "/" + t.loader, "--library-path", traceMount, traceMount + "/strace",
-		"-f", "-qq", "-s", "4096", "-e", "trace=file", "-e", "signal=none",
+		"-f", "-qq", "-s", "4096", "-e", "trace=file,process", "-e", "signal=none",
 		"-o", traceMount + "/files", "--",
 	}
 	return append(wrapped, entrypoint...)
@@ -153,13 +153,10 @@ func (t *tracer) bind() string {
 	return t.dir + ":" + traceMount
 }
 
-// touched is the files the traced program asked for and was given.
-func (t *tracer) touched(workingDir string) []string {
-	raw, err := os.ReadFile(filepath.Join(t.dir, "files"))
-	if err != nil {
-		return nil
-	}
-	return touchedPaths(raw, workingDir)
+// trace is what strace wrote down.
+func (t *tracer) trace() []byte {
+	raw, _ := os.ReadFile(filepath.Join(t.dir, "files"))
+	return raw
 }
 
 func (t *tracer) remove() {
@@ -172,67 +169,170 @@ func isTracer(name string) bool {
 	return name == "strace" || strings.HasPrefix(name, "ld-musl-")
 }
 
-var traceCall = regexp.MustCompile(`^(?:\[pid +\d+\] +|\d+ +)?([a-z_0-9]+)\(`)
+var traceCall = regexp.MustCompile(`^(?:\[pid +(\d+)\] +|(\d+) +)([a-z_0-9]+)\(`)
+var traceResumed = regexp.MustCompile(`^(?:\[pid +(\d+)\] +|(\d+) +)<\.\.\. ([a-z_0-9]+) resumed>`)
+
+// spawns are the calls that make a process or a thread.
+var spawns = []string{"clone", "clone3", "fork", "vfork"}
+
+// firstQuoted reads the path a call names: its first argument, or the one after a descriptor.
+func firstQuoted(rest string) (name string, after string, relativeToCwd bool, ok bool) {
+	relativeToCwd = true
+	if strings.HasPrefix(rest, "AT_FDCWD, ") {
+		rest = rest[len("AT_FDCWD, "):]
+	} else if !strings.HasPrefix(rest, "\"") {
+		// the first argument is a descriptor: a path that is not absolute has no telling
+		relativeToCwd = false
+		if comma := strings.Index(rest, ", "); comma >= 0 {
+			rest = rest[comma+2:]
+		}
+	}
+	if !strings.HasPrefix(rest, "\"") {
+		return "", "", false, false
+	}
+
+	end := 1
+	for end < len(rest) && rest[end] != '"' {
+		if rest[end] == '\\' {
+			end++
+		}
+		end++
+	}
+	if end >= len(rest) {
+		return "", "", false, false
+	}
+	name = rest[1:end]
+	if unquoted, err := strconv.Unquote("\"" + name + "\""); err == nil {
+		name = unquoted
+	}
+
+	return name, rest[end+1:], relativeToCwd, true
+}
+
+// resultOf is what a call came back with, and whether the trace has it: a call cut in two by another
+// thread has its end on a line of its own.
+func resultOf(after string) (string, bool) {
+	at := strings.LastIndex(after, ") = ")
+	if at < 0 {
+		return "", false
+	}
+	result := after[at+len(") = "):]
+	if space := strings.IndexAny(result, " \t"); space >= 0 {
+		result = result[:space]
+	}
+	return result, true
+}
+
+type traceFile struct {
+	pid  string
+	line int
+	path string
+}
 
 // touchedPaths reads what strace wrote and returns the files named by the calls that found them.
 // A call that came back with an error found nothing; one the trace cut in two - unfinished, with
 // its end written on another line - is taken, since a file looked for is a file that may be needed.
 // A path that is not absolute is read against workingDir when it was relative to the working
 // directory, and left out when it was relative to a file descriptor that is not known here.
-func touchedPaths(trace []byte, workingDir string) []string {
-	seen := map[string]bool{}
+//
+// A launcher script runs tools - sed, find, a shell - before it hands over, and a unikernel runs no
+// script, so what they opened is not what the program needs. When programs says which files the
+// program is, only what the processes that became it opened, and the processes they made after, is
+// taken. A trace in which none of them was started is read whole.
+func touchedPaths(trace []byte, workingDir string, programs []string) []string {
+	var files []traceFile
+	firstRun := map[string]int{}
+	// where a process made by the program turned into something else
+	leftAt := map[string]int{}
+	type child struct {
+		parent string
+		at     int
+	}
+	children := map[string]child{}
+	ran := false
 
-	for _, line := range strings.Split(string(trace), "\n") {
+	for i, line := range strings.Split(string(trace), "\n") {
+		if m := traceResumed.FindStringSubmatch(line); m != nil {
+			pid := m[1] + m[2]
+			if contains(spawns, m[3]) {
+				if result, ok := resultOf(line); ok {
+					if n, err := strconv.Atoi(result); err == nil && n > 0 {
+						children[result] = child{parent: pid, at: i}
+					}
+				}
+			}
+			continue
+		}
+
 		call := traceCall.FindStringSubmatch(line)
 		if call == nil {
 			continue
 		}
+		pid, name := call[1]+call[2], call[3]
 		rest := line[len(call[0]):]
 
-		relativeToCwd := true
-		if strings.HasPrefix(rest, "AT_FDCWD, ") {
-			rest = rest[len("AT_FDCWD, "):]
-		} else if !strings.HasPrefix(rest, "\"") {
-			// the first argument is a descriptor: a path that is not absolute has no telling
-			relativeToCwd = false
-			if comma := strings.Index(rest, ", "); comma >= 0 {
-				rest = rest[comma+2:]
+		if contains(spawns, name) {
+			if result, ok := resultOf(rest); ok {
+				if n, err := strconv.Atoi(result); err == nil && n > 0 {
+					children[result] = child{parent: pid, at: i}
+				}
 			}
-		}
-		if !strings.HasPrefix(rest, "\"") {
 			continue
 		}
 
-		end := 1
-		for end < len(rest) && rest[end] != '"' {
-			if rest[end] == '\\' {
-				end++
-			}
-			end++
-		}
-		if end >= len(rest) {
+		path, after, relativeToCwd, ok := firstQuoted(rest)
+		if !ok {
 			continue
 		}
-		name := rest[1:end]
-		if unquoted, err := strconv.Unquote("\"" + name + "\""); err == nil {
-			name = unquoted
-		}
-		after := rest[end+1:]
-
 		if !strings.Contains(after, "<unfinished ...>") {
-			at := strings.LastIndex(after, ") = ")
-			if at < 0 || strings.HasPrefix(after[at+len(") = "):], "-1") {
+			result, found := resultOf(after)
+			if !found || strings.HasPrefix(result, "-") {
 				continue
 			}
 		}
 
-		if !strings.HasPrefix(name, "/") {
-			if !relativeToCwd || workingDir == "" || name == "" {
+		if !strings.HasPrefix(path, "/") {
+			if !relativeToCwd || workingDir == "" || path == "" {
 				continue
 			}
-			name = path.Join(workingDir, name)
+			path = pathJoin(workingDir, path)
 		}
-		seen[path.Clean(name)] = true
+		path = pathClean(path)
+
+		if name == "execve" {
+			if contains(programs, path) {
+				if _, seen := firstRun[pid]; !seen {
+					firstRun[pid] = i
+				}
+				ran = true
+			} else if _, seen := leftAt[pid]; !seen {
+				leftAt[pid] = i
+			}
+		}
+		files = append(files, traceFile{pid: pid, line: i, path: path})
+	}
+
+	var counts func(pid string, line int, depth int) bool
+	counts = func(pid string, line int, depth int) bool {
+		if at, ok := firstRun[pid]; ok && line >= at {
+			return true
+		}
+		if c, ok := children[pid]; ok && depth < 64 {
+			// what the program made and then turned into a tool of its own is not the program
+			if left, ok := leftAt[pid]; ok && line > left {
+				return false
+			}
+			return counts(c.parent, c.at, depth+1)
+		}
+		return false
+	}
+
+	seen := map[string]bool{}
+	for _, f := range files {
+		if ran && !counts(f.pid, f.line, 0) {
+			continue
+		}
+		seen[f.path] = true
 	}
 
 	paths := make([]string, 0, len(seen))
@@ -243,3 +343,6 @@ func touchedPaths(trace []byte, workingDir string) []string {
 
 	return paths
 }
+
+func pathJoin(a string, b string) string { return path.Join(a, b) }
+func pathClean(p string) string          { return path.Clean(p) }

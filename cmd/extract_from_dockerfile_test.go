@@ -681,7 +681,7 @@ func TestTouchedPathsTakesWhatWasFound(t *testing.T) {
 		"/opt/java/bin/java",
 		"/tmp/with \"quote\"",
 		"/var/lib/data",
-	}, touchedPaths([]byte(trace), "/app"))
+	}, touchedPaths([]byte(trace), "/app", nil))
 }
 
 func TestLeaveOutTheOperatingSystemKeepsOnlyWhatWasWatched(t *testing.T) {
@@ -718,4 +718,29 @@ func TestEnvironmentLeavesWhatBelongsToTheContainer(t *testing.T) {
 	env := environment([]string{"HOSTNAME=52c93b8144ec", "SHLVL=0", "JAVA_HOME=/opt/java"})
 
 	assert.Equal(t, map[string]string{"JAVA_HOME": "/opt/java"}, env)
+}
+
+func TestTouchedPathsLeavesOutWhatTheLauncherOpened(t *testing.T) {
+	trace := `10 execve("/entrypoint.sh", ["/entrypoint.sh"], 0x7ffd /* 5 vars */) = 0
+10 openat(AT_FDCWD, "/lib/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+10 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|SIGCHLD) = 11
+11 execve("/usr/bin/sed", ["sed"], 0x7ffd /* 5 vars */) = 0
+11 openat(AT_FDCWD, "/usr/lib/libselinux.so.1", O_RDONLY|O_CLOEXEC) = 3
+10 execve("/opt/java/bin/java", ["java"], 0x7ffd /* 5 vars */) = 0
+10 openat(AT_FDCWD, "/opt/java/lib/libjvm.so", O_RDONLY|O_CLOEXEC) = 3
+10 clone(child_stack=0x7f, flags=CLONE_VM|CLONE_THREAD) = 12
+12 openat(AT_FDCWD, "/etc/hosts", O_RDONLY) = 4
+10 clone(child_stack=NULL, flags=CLONE_VM <unfinished ...>
+13 openat(AT_FDCWD, "/etc/passwd", O_RDONLY) = 5
+10 <... clone resumed>) = 13
+13 execve("/usr/bin/tool", ["tool"], 0x7ffd /* 5 vars */) = 0
+13 openat(AT_FDCWD, "/usr/lib/libtool.so", O_RDONLY) = 5
+`
+	assert.Equal(t, []string{
+		"/etc/hosts",
+		"/etc/passwd",
+		"/opt/java/bin/java",
+		"/opt/java/lib/libjvm.so",
+		"/usr/bin/tool",
+	}, touchedPaths([]byte(trace), "/", []string{"/opt/java/bin/java"}))
 }
