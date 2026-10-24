@@ -744,3 +744,31 @@ func TestTouchedPathsLeavesOutWhatTheLauncherOpened(t *testing.T) {
 		"/usr/bin/tool",
 	}, touchedPaths([]byte(trace), "/", []string{"/opt/java/bin/java"}))
 }
+
+func TestLeaveOutTheOperatingSystemLeavesOutWhatTheScriptsWroteWhenWatched(t *testing.T) {
+	root := debianForTest(t)
+	writeForTest(t, root, "etc/systemd/system/enabled.service", "[Unit]\n")
+	assert.NoError(t, os.Symlink("/usr/lib/systemd/gone.service",
+		filepath.Join(root, "etc", "systemd", "system", "wants.service")))
+	writeForTest(t, root, "usr/local/bin/tool", "tool")
+	writeForTest(t, root, "home/ubuntu/.bashrc", "history\n")
+	writeForTest(t, root, "etc/app.conf", "read\n")
+
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil,
+		[]string{"/lib/libc.so.6", "/etc/app.conf"})
+
+	assert.False(t, existsForTest(root, "etc/systemd"), "units written by an installer, and the link to them")
+	assert.False(t, existsForTest(root, "home/ubuntu/.bashrc"), "a home nobody uses")
+	assert.True(t, existsForTest(root, "etc/app.conf"), "opened")
+	assert.True(t, existsForTest(root, "usr/local/bin/tool"), "what was installed on top")
+	assert.True(t, existsForTest(root, "opt/java/bin/java"), "the image's own")
+}
+
+func TestLeaveOutTheOperatingSystemKeepsWhatScriptsWroteWhenNotWatched(t *testing.T) {
+	root := debianForTest(t)
+	writeForTest(t, root, "etc/systemd/system/enabled.service", "[Unit]\n")
+
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil, nil)
+
+	assert.True(t, existsForTest(root, "etc/systemd/system/enabled.service"))
+}

@@ -38,6 +38,20 @@ var alwaysKept = []string{
 	"/usr/share/zoneinfo", "/usr/share/ca-certificates", "/usr/lib/ssl", "/usr/lib/locale",
 }
 
+// systemTrees are where a distribution puts itself, and where a file the program never opened was
+// put by the distribution's scripts rather than by whoever built the image.
+var systemTrees = []string{
+	"/etc", "/usr", "/root", "/home", "/boot", "/var/lib/dpkg", "/var/lib/apt", "/var/lib/apk",
+	"/var/lib/rpm", "/var/cache", "/var/log",
+}
+
+// applicationTrees are the parts of those that hold programs people install on top of a
+// distribution, which load their own files long after they start.
+var applicationTrees = []string{
+	"/usr/local", "/usr/lib/jvm", "/usr/share/java", "/usr/lib/node_modules", "/usr/lib/python3",
+	"/usr/share/nginx", "/usr/share/tomcat",
+}
+
 // leaveOutTheOperatingSystem takes out of sysroot what the distribution installed and the program
 // does not reach. mapped is what the processes of the image had mapped when it was run.
 //
@@ -192,6 +206,37 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		}
 		return nil
 	})
+
+	// What the distribution's scripts wrote when they installed it belongs to no package: systemd's
+	// units, the caches, the shell history. Where the program was watched, what it never opened out of
+	// the system's own trees goes with the rest; what lies elsewhere - /opt, /usr/local, an
+	// application's directory - is the image's own, and stays.
+	if watched {
+		filepath.Walk(sysroot, func(file string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil
+			}
+			p := inSysroot(sysroot, file)
+			if p == "" || r.files[p] || underAny(p, alwaysKept) || !underAny(p, systemTrees) ||
+				underAny(p, applicationTrees) {
+				return nil
+			}
+			if _, owned := owners[p]; owned {
+				return nil
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				// the pass below takes the ones that lead nowhere
+				return nil
+			}
+			if os.Remove(file) == nil {
+				if info.Mode().IsRegular() {
+					leftOut += info.Size()
+				}
+				emptied = append(emptied, filepath.Dir(file))
+			}
+			return nil
+		})
+	}
 
 	// A link that leads to what was left out leads nowhere, and a directory that held nothing else
 	// goes with it: systemd's units are links, and so is everything it enables.
