@@ -94,6 +94,7 @@ jobs:
           - glassfish-resolved
           - openliberty-resolved
           - temurin-resolved
+          - temurin-jre-resolved
           - activemq-resolved
           - rocketmq-resolved
           - traefik-resolved
@@ -184,4 +185,9 @@ jobs:
           find "$HOME/.ops/local_packages" -maxdepth 3 -name package.manifest -exec sh -c \
             'echo "--- $1"; cat "$1"' _ {} \; || true
           du -sh "$HOME"/.ops/local_packages/*/* 2>/dev/null || true
+          for p in "$HOME"/.ops/local_packages/*/*temurin*; do
+            [ -d "$p/sysroot" ] || continue
+            echo "--- $p/sysroot"
+            (cd "$p/sysroot" && find . -maxdepth 2 -not -path . | sort && du -sh ./* | sort -h | tail -8)
+          done
 
