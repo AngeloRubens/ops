@@ -48,19 +48,22 @@ var systemTrees = []string{
 // applicationTrees are the parts of those that hold programs people install on top of a
 // distribution, which load their own files long after they start.
 var applicationTrees = []string{
-	"/usr/local", "/usr/lib/jvm", "/usr/share/java", "/usr/lib/node_modules", "/usr/lib/python3",
+	"/usr/local", "/usr/src", "/usr/lib/jvm", "/usr/share/java", "/usr/lib/node_modules", "/usr/lib/python3",
 	"/usr/share/nginx", "/usr/share/tomcat",
 }
 
 // leaveOutTheOperatingSystem takes out of sysroot what the distribution installed and the program
 // does not reach. mapped is what the processes of the image had mapped when it was run.
 //
+// keep is the trees that are the program's own whatever it was seen to open: its working directory,
+// where it finds what it serves and the files beside it.
+//
 // When the program was watched, touched is every file it opened while it started and ran, and that
 // is what stays of the operating system, with the links that lead to it and the parts it reads by
 // name. Nothing is followed from there: a library a program was linked against and never loaded is
 // not needed, and neither are the fonts of a jvm that draws nothing.
 func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string, env []string,
-	touched []string) {
+	touched []string, keep []string) {
 	owners := packageOwners(sysroot)
 	if len(owners) == 0 {
 		return
@@ -174,24 +177,6 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		}
 	}
 
-	// glibc opens some of its own libraries by a name it puts together, when a program first looks
-	// a name up, converts a character set or ends a thread, and a program that has only started has
-	// done none of that. They are not the program's to ask for, so they are not in what it was seen to open.
-	if watched {
-		filepath.Walk(sysroot, func(file string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
-				return nil
-			}
-			p := inSysroot(sysroot, file)
-			base := filepath.Base(p)
-			if p != "" && (strings.HasPrefix(base, "libnss_") || strings.HasPrefix(base, "libresolv") ||
-				strings.HasPrefix(base, "libgcc_s") || strings.Contains(p, "/gconv/")) {
-				r.addAsIs(p)
-			}
-			return nil
-		})
-	}
-
 	var leftOut int64
 	dropped := map[string]bool{}
 	var emptied, carried []string
@@ -202,7 +187,7 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		}
 		p := inSysroot(sysroot, file)
 		group, owned := owners[p]
-		if p == "" || !owned || group == application || underAny(p, alwaysKept) {
+		if p == "" || !owned || group == application || underAny(p, alwaysKept) || underAny(p, keep) {
 			return nil
 		}
 		if r.files[p] {
@@ -235,8 +220,8 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 				return nil
 			}
 			p := inSysroot(sysroot, file)
-			if p == "" || r.files[p] || underAny(p, alwaysKept) || !underAny(p, systemTrees) ||
-				underAny(p, applicationTrees) {
+			if p == "" || r.files[p] || underAny(p, alwaysKept) || underAny(p, keep) ||
+				!underAny(p, systemTrees) || underAny(p, applicationTrees) {
 				return nil
 			}
 			if _, owned := owners[p]; owned {

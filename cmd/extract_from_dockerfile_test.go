@@ -538,7 +538,7 @@ func existsForTest(root string, p string) bool {
 func TestLeaveOutTheOperatingSystemKeepsWhatThePackagesDidNotInstall(t *testing.T) {
 	root := debianForTest(t)
 
-	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", []string{"/lib/libc.so.6"}, nil, nil)
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", []string{"/lib/libc.so.6"}, nil, nil, nil)
 
 	assert.True(t, existsForTest(root, "opt/java/bin/java"), "what the image put there itself")
 	assert.True(t, existsForTest(root, "usr/lib/libc.so.6"), "what the program reaches")
@@ -554,7 +554,7 @@ func TestLeaveOutTheOperatingSystemKeepsWhatThePackagesDidNotInstall(t *testing.
 func TestLeaveOutTheOperatingSystemKeepsThePackageOfTheProgram(t *testing.T) {
 	root := debianForTest(t)
 
-	leaveOutTheOperatingSystem(root, "/usr/bin/perl", nil, nil, nil)
+	leaveOutTheOperatingSystem(root, "/usr/bin/perl", nil, nil, nil, nil)
 
 	assert.True(t, existsForTest(root, "usr/bin/perl"))
 	assert.True(t, existsForTest(root, "usr/share/perl/strict.pm"), "what the program reads by name")
@@ -566,7 +566,7 @@ func TestLeaveOutTheOperatingSystemKeepsEverythingWithoutADatabase(t *testing.T)
 	root := t.TempDir()
 	writeForTest(t, root, "usr/bin/perl", "perl")
 
-	leaveOutTheOperatingSystem(root, "/opt/app", nil, nil, nil)
+	leaveOutTheOperatingSystem(root, "/opt/app", nil, nil, nil, nil)
 
 	_, err := os.Stat(filepath.Join(root, "usr", "bin", "perl"))
 	assert.NoError(t, err)
@@ -689,7 +689,7 @@ func TestLeaveOutTheOperatingSystemKeepsOnlyWhatWasWatched(t *testing.T) {
 	writeForTest(t, root, "usr/share/perl/unused.pm", "1;\n")
 
 	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil,
-		[]string{"/lib/libc.so.6", "/usr/share/perl/strict.pm"})
+		[]string{"/lib/libc.so.6", "/usr/share/perl/strict.pm"}, nil)
 
 	assert.True(t, existsForTest(root, "opt/java/bin/java"), "what the image put there itself")
 	assert.True(t, existsForTest(root, "usr/lib/libc.so.6"), "opened, through a link")
@@ -755,7 +755,7 @@ func TestLeaveOutTheOperatingSystemLeavesOutWhatTheScriptsWroteWhenWatched(t *te
 	writeForTest(t, root, "etc/app.conf", "read\n")
 
 	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil,
-		[]string{"/lib/libc.so.6", "/etc/app.conf"})
+		[]string{"/lib/libc.so.6", "/etc/app.conf"}, nil)
 
 	assert.False(t, existsForTest(root, "etc/systemd"), "units written by an installer, and the link to them")
 	assert.False(t, existsForTest(root, "home/ubuntu/.bashrc"), "a home nobody uses")
@@ -768,20 +768,19 @@ func TestLeaveOutTheOperatingSystemKeepsWhatScriptsWroteWhenNotWatched(t *testin
 	root := debianForTest(t)
 	writeForTest(t, root, "etc/systemd/system/enabled.service", "[Unit]\n")
 
-	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil, nil)
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil, nil, nil)
 
 	assert.True(t, existsForTest(root, "etc/systemd/system/enabled.service"))
 }
 
-func TestLeaveOutTheOperatingSystemKeepsWhatGlibcOpensLaterWhenWatched(t *testing.T) {
+func TestLeaveOutTheOperatingSystemKeepsWhatIsUnderTheKeptTrees(t *testing.T) {
 	root := debianForTest(t)
-	writeForTest(t, root, "usr/lib/libnss_dns.so.2", "nss")
-	writeForTest(t, root, "usr/lib/gconv/UTF-16.so", "gconv")
-	writeForTest(t, root, "var/lib/dpkg/info/libc6:amd64.list",
-		"/.\n/lib\n/lib/libc.so.6\n/lib/libnss_dns.so.2\n/lib/gconv/UTF-16.so\n")
+	writeForTest(t, root, "etc/app/data", "served\n")
+	writeForTest(t, root, "etc/other.conf", "never opened\n")
 
-	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil, []string{"/lib/libc.so.6"})
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil, []string{"/lib/libc.so.6"},
+		[]string{"/etc/app"})
 
-	assert.True(t, existsForTest(root, "usr/lib/libnss_dns.so.2"), "opened on the first lookup of a name")
-	assert.True(t, existsForTest(root, "usr/lib/gconv/UTF-16.so"), "opened to convert a character set")
+	assert.True(t, existsForTest(root, "etc/app/data"), "the working directory is the program's own")
+	assert.False(t, existsForTest(root, "etc/other.conf"), "never opened")
 }
