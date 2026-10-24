@@ -174,6 +174,24 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		}
 	}
 
+	// glibc opens some of its own libraries by a name it puts together, when a program first looks
+	// a name up, converts a character set or ends a thread, and a program that has only started has
+	// done none of that. They are not the program's to ask for, so they are not in what it was seen to open.
+	if watched {
+		filepath.Walk(sysroot, func(file string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil
+			}
+			p := inSysroot(sysroot, file)
+			base := filepath.Base(p)
+			if p != "" && (strings.HasPrefix(base, "libnss_") || strings.HasPrefix(base, "libresolv") ||
+				strings.HasPrefix(base, "libgcc_s") || strings.Contains(p, "/gconv/")) {
+				r.addAsIs(p)
+			}
+			return nil
+		})
+	}
+
 	var leftOut int64
 	dropped := map[string]bool{}
 	var emptied, carried []string

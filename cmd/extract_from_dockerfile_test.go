@@ -772,3 +772,16 @@ func TestLeaveOutTheOperatingSystemKeepsWhatScriptsWroteWhenNotWatched(t *testin
 
 	assert.True(t, existsForTest(root, "etc/systemd/system/enabled.service"))
 }
+
+func TestLeaveOutTheOperatingSystemKeepsWhatGlibcOpensLaterWhenWatched(t *testing.T) {
+	root := debianForTest(t)
+	writeForTest(t, root, "usr/lib/libnss_dns.so.2", "nss")
+	writeForTest(t, root, "usr/lib/gconv/UTF-16.so", "gconv")
+	writeForTest(t, root, "var/lib/dpkg/info/libc6:amd64.list",
+		"/.\n/lib\n/lib/libc.so.6\n/lib/libnss_dns.so.2\n/lib/gconv/UTF-16.so\n")
+
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil, []string{"/lib/libc.so.6"})
+
+	assert.True(t, existsForTest(root, "usr/lib/libnss_dns.so.2"), "opened on the first lookup of a name")
+	assert.True(t, existsForTest(root, "usr/lib/gconv/UTF-16.so"), "opened to convert a character set")
+}

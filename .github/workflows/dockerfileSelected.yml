@@ -54,6 +54,10 @@ jobs:
             echo "--- $p/package.manifest"; cat "$p/package.manifest"
             echo "--- $p/sysroot"
             (cd "$p/sysroot" && find . -maxdepth 2 -not -path . | sort && du -sh ./* | sort -h | tail -8)
+            echo "--- etc/systemd"
+            (cd "$p/sysroot" && find etc/systemd -ls 2>/dev/null | head -30)
+            echo "--- usr"
+            (cd "$p/sysroot" && du -sh usr/* usr/lib/* usr/share/* 2>/dev/null | sort -h | tail -15)
             echo "--- libraries"
             (cd "$p/sysroot" && find lib lib64 usr/lib -maxdepth 3 \( -type f -o -type l \) 2>/dev/null | sort)
           done
