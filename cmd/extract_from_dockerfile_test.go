@@ -538,7 +538,7 @@ func existsForTest(root string, p string) bool {
 func TestLeaveOutTheOperatingSystemKeepsWhatThePackagesDidNotInstall(t *testing.T) {
 	root := debianForTest(t)
 
-	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", []string{"/lib/libc.so.6"}, nil)
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", []string{"/lib/libc.so.6"}, nil, nil)
 
 	assert.True(t, existsForTest(root, "opt/java/bin/java"), "what the image put there itself")
 	assert.True(t, existsForTest(root, "usr/lib/libc.so.6"), "what the program reaches")
@@ -554,7 +554,7 @@ func TestLeaveOutTheOperatingSystemKeepsWhatThePackagesDidNotInstall(t *testing.
 func TestLeaveOutTheOperatingSystemKeepsThePackageOfTheProgram(t *testing.T) {
 	root := debianForTest(t)
 
-	leaveOutTheOperatingSystem(root, "/usr/bin/perl", nil, nil)
+	leaveOutTheOperatingSystem(root, "/usr/bin/perl", nil, nil, nil)
 
 	assert.True(t, existsForTest(root, "usr/bin/perl"))
 	assert.True(t, existsForTest(root, "usr/share/perl/strict.pm"), "what the program reads by name")
@@ -566,7 +566,7 @@ func TestLeaveOutTheOperatingSystemKeepsEverythingWithoutADatabase(t *testing.T)
 	root := t.TempDir()
 	writeForTest(t, root, "usr/bin/perl", "perl")
 
-	leaveOutTheOperatingSystem(root, "/opt/app", nil, nil)
+	leaveOutTheOperatingSystem(root, "/opt/app", nil, nil, nil)
 
 	_, err := os.Stat(filepath.Join(root, "usr", "bin", "perl"))
 	assert.NoError(t, err)
@@ -659,4 +659,63 @@ func TestMappedPathsReadsTheFilesOfAMap(t *testing.T) {
 		"/memfd:jit",
 		"/opt/app/a name with spaces.so",
 	}, mappedPaths([]byte(maps)))
+}
+
+func TestTouchedPathsTakesWhatWasFound(t *testing.T) {
+	trace := `12 execve("/opt/java/bin/java", ["java"], 0x7ffd /* 5 vars */) = 0
+12 openat(AT_FDCWD, "/lib/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
+13 openat(AT_FDCWD, "/usr/lib/libfontconfig.so.1", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+13 newfstatat(AT_FDCWD, "/etc/hosts", {st_mode=S_IFREG|0644}, 0) = 0
+13 openat(AT_FDCWD, "conf/app.properties", O_RDONLY) = 4
+13 openat(5, "relative-to-a-descriptor", O_RDONLY) = 6
+13 openat(7, "/etc/ssl/certs/ca.pem", O_RDONLY) = 8
+14 openat(AT_FDCWD, "/tmp/with \"quote\"", O_RDONLY <unfinished ...>
+14 <... openat resumed>) = 9
+[pid 15] stat("/var/lib/data", {st_mode=S_IFDIR|0755, ...}) = 0
+`
+	assert.Equal(t, []string{
+		"/app/conf/app.properties",
+		"/etc/hosts",
+		"/etc/ssl/certs/ca.pem",
+		"/lib/libc.so.6",
+		"/opt/java/bin/java",
+		"/tmp/with \"quote\"",
+		"/var/lib/data",
+	}, touchedPaths([]byte(trace), "/app"))
+}
+
+func TestLeaveOutTheOperatingSystemKeepsOnlyWhatWasWatched(t *testing.T) {
+	root := debianForTest(t)
+	writeForTest(t, root, "usr/share/perl/unused.pm", "1;\n")
+
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil,
+		[]string{"/lib/libc.so.6", "/usr/share/perl/strict.pm"})
+
+	assert.True(t, existsForTest(root, "opt/java/bin/java"), "what the image put there itself")
+	assert.True(t, existsForTest(root, "usr/lib/libc.so.6"), "opened, through a link")
+	assert.True(t, existsForTest(root, "usr/share/perl/strict.pm"), "opened")
+	assert.True(t, existsForTest(root, "etc/nsswitch.conf"), "read by name")
+	assert.False(t, existsForTest(root, "usr/bin/ldd"), "never opened")
+	assert.False(t, existsForTest(root, "etc/perl/Config.pm"), "never opened")
+}
+
+func TestMainProgramLeavesTheTracerAlone(t *testing.T) {
+	top := dockerContainer.TopResponse{
+		Titles: []string{"PID", "PPID", "ARGS"},
+		Processes: [][]string{
+			{"1", "0", "/.ops-trace/ld-musl-x86_64.so.1 --library-path /.ops-trace /.ops-trace/strace -f -- /entrypoint.sh java -jar /app.jar"},
+			{"7", "1", "java -jar /app.jar"},
+		},
+	}
+
+	argv, pid := mainProgram(top)
+
+	assert.Equal(t, []string{"java", "-jar", "/app.jar"}, argv)
+	assert.Equal(t, "7", pid)
+}
+
+func TestEnvironmentLeavesWhatBelongsToTheContainer(t *testing.T) {
+	env := environment([]string{"HOSTNAME=52c93b8144ec", "SHLVL=0", "JAVA_HOME=/opt/java"})
+
+	assert.Equal(t, map[string]string{"JAVA_HOME": "/opt/java"}, env)
 }
