@@ -1,0 +1,6 @@
+# The official Eclipse Temurin 25 JRE image, asked what its entrypoint script starts. The package
+# has to carry the jvm and the libraries it loads, and name java as the program.
+DOCKERFILE=../temurin/upstream/25/jre/ubuntu/noble/Dockerfile
+EXPECT=package
+BUILD_FLAGS="--resolve-entrypoint"
+MANIFEST_CHECK='(.Program | test("/bin/java$")) and (.Env.JAVA_HOME != null)'
