@@ -76,6 +76,10 @@ type DockerfileOptions struct {
 	// leaves the package to what the program is linked against rather than what it was seen to use.
 	NoTrace bool
 
+	// Smp is the number of processors the machine is to be run with, the same as ops run --smp:
+	// it is what /proc/cpuinfo lists, and it goes in the config file. One when zero.
+	Smp int
+
 	// Keep are files and trees of the image to carry whatever the program was seen to open.
 	Keep []string
 
@@ -199,7 +203,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 
 	if opts.WholeImage {
 		fmt.Println("the whole file system of the image is carried, operating system and all")
-		if err := writeMachineFiles(sysroot, opts.Arch, nil); err != nil {
+		if err := writeMachineFiles(sysroot, opts.Arch, opts.Smp, nil); err != nil {
 			return "", "", err
 		}
 	} else {
@@ -209,7 +213,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		if len(trace) > 0 {
 			opened = touched
 		}
-		if err := writeMachineFiles(sysroot, opts.Arch, opened); err != nil {
+		if err := writeMachineFiles(sysroot, opts.Arch, opts.Smp, opened); err != nil {
 			return "", "", err
 		}
 		if len(trace) > 0 && opts.Verbose {
@@ -248,6 +252,9 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	}
 	c.BaseVolumeSz = volumeSize(sysroot)
 	c.RunConfig.Ports, c.RunConfig.UDPPorts = exposedPorts(config.ExposedPorts)
+	if opts.Smp > 1 {
+		c.RunConfig.CPUs = opts.Smp
+	}
 	c.ManifestPassthrough = map[string]any{}
 	if wd := config.WorkingDir; wd != "" && wd != "/" {
 		c.ManifestPassthrough["cwd"] = wd
@@ -996,7 +1003,10 @@ func writeHosts(sysroot string) error {
 //
 // Only on x86_64: on aarch64 the kernel answers for cpuinfo itself, and a file of ours in its place
 // would stop it from starting at all, since it asserts that it can make its own.
-func writeMachineFiles(sysroot string, arch string, opened []string) error {
+func writeMachineFiles(sysroot string, arch string, cpus int, opened []string) error {
+	if cpus < 1 {
+		cpus = 1
+	}
 	if arch == "" {
 		arch = runtime.GOARCH
 	}
@@ -1033,7 +1043,7 @@ func writeMachineFiles(sysroot string, arch string, opened []string) error {
 	// moment the process runs: a program measuring how hard it is working will read that it is
 	// not, and one that divides by the time it thinks has passed is the case to watch.
 	machine := map[string]string{
-		"proc/cpuinfo":                    "processor\t: 0\n\n",
+		"proc/cpuinfo":                    cpuinfo(cpus),
 		"sys/devices/system/cpu/possible": "0-63\n",
 		"proc/diskstats":                  "   0       0 vda 0 0 0 0 0 0 0 0 0 0 0\n",
 		"proc/1/stat":                     processStat(1),
@@ -1055,6 +1065,15 @@ func writeMachineFiles(sysroot string, arch string, opened []string) error {
 	}
 
 	return nil
+}
+
+// cpuinfo lists the processors the machine is run with, a block for each.
+func cpuinfo(cpus int) string {
+	var b strings.Builder
+	for i := 0; i < cpus; i++ {
+		fmt.Fprintf(&b, "processor\t: %d\n\n", i)
+	}
+	return b.String()
 }
 
 // processStat is the line a process of Linux has in /proc/<pid>/stat: fifty-two words, since a

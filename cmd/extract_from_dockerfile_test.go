@@ -327,7 +327,7 @@ func TestWriteHostsGivesLocalhostAnAddress(t *testing.T) {
 func TestWriteMachineFilesCountsTheProcessors(t *testing.T) {
 	root := t.TempDir()
 
-	assert.NoError(t, writeMachineFiles(root, "amd64", nil))
+	assert.NoError(t, writeMachineFiles(root, "amd64", 1, nil))
 
 	cpuinfo, err := os.ReadFile(filepath.Join(root, "proc", "cpuinfo"))
 	assert.NoError(t, err)
@@ -360,7 +360,7 @@ func TestWriteMachineFilesCountsTheProcessors(t *testing.T) {
 func TestWriteMachineFilesWritesOnlyWhatTheProgramOpened(t *testing.T) {
 	root := t.TempDir()
 
-	assert.NoError(t, writeMachineFiles(root, "amd64", []string{"/proc/cpuinfo", "/proc/4242/stat", "/etc/hosts"}))
+	assert.NoError(t, writeMachineFiles(root, "amd64", 1, []string{"/proc/cpuinfo", "/proc/4242/stat", "/etc/hosts"}))
 
 	for _, name := range []string{"proc/cpuinfo", "proc/1/stat", "proc/2/stat", "proc/3/stat"} {
 		_, err := os.Stat(filepath.Join(root, name))
@@ -372,10 +372,21 @@ func TestWriteMachineFilesWritesOnlyWhatTheProgramOpened(t *testing.T) {
 	}
 }
 
+func TestWriteMachineFilesListsTheProcessorsTheMachineIsRunWith(t *testing.T) {
+	root := t.TempDir()
+
+	assert.NoError(t, writeMachineFiles(root, "amd64", 4, nil))
+
+	cpuinfo, err := os.ReadFile(filepath.Join(root, "proc", "cpuinfo"))
+	assert.NoError(t, err)
+	assert.Equal(t, 4, strings.Count(string(cpuinfo), "processor\t:"))
+	assert.Contains(t, string(cpuinfo), "processor\t: 3\n")
+}
+
 func TestWriteMachineFilesWritesNothingTheProgramDidNotOpen(t *testing.T) {
 	root := t.TempDir()
 
-	assert.NoError(t, writeMachineFiles(root, "amd64", []string{"/etc/hosts", "/proc/7/task/7/stat"}))
+	assert.NoError(t, writeMachineFiles(root, "amd64", 1, []string{"/etc/hosts", "/proc/7/task/7/stat"}))
 
 	_, err := os.Stat(filepath.Join(root, "proc"))
 	assert.Error(t, err)
@@ -384,7 +395,7 @@ func TestWriteMachineFilesWritesNothingTheProgramDidNotOpen(t *testing.T) {
 func TestWriteMachineFilesLeavesTheKernelToAnswerOnArm(t *testing.T) {
 	root := t.TempDir()
 
-	assert.NoError(t, writeMachineFiles(root, "arm64", nil))
+	assert.NoError(t, writeMachineFiles(root, "arm64", 1, nil))
 
 	_, err := os.Stat(filepath.Join(root, "proc", "cpuinfo"))
 	assert.Error(t, err)
