@@ -76,6 +76,9 @@ type DockerfileOptions struct {
 	// leaves the package to what the program is linked against rather than what it was seen to use.
 	NoTrace bool
 
+	// Keep are files and trees of the image to carry whatever the program was seen to open.
+	Keep []string
+
 	// ConfigOut is where the ops config file for building an image out of the package is
 	// written, <package name>.config.json in the current directory when empty.
 	ConfigOut string
@@ -210,7 +213,11 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		if wd := config.WorkingDir; wd != "" && wd != "/" {
 			keep = append(keep, wd)
 		}
-		leaveOutTheOperatingSystem(sysroot, program, mapped, config.Env, touched, keep)
+		asked := []string{}
+		for _, k := range opts.Keep {
+			asked = append(asked, pathClean("/"+k))
+		}
+		leaveOutTheOperatingSystem(sysroot, program, mapped, config.Env, touched, append(append([]string{}, keep...), asked...))
 		// the places the program is started in and given as its own, which a run that left them
 		// empty has no file in
 		for _, dir := range append(keep, environment(config.Env)["HOME"]) {

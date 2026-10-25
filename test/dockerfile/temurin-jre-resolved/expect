@@ -9,5 +9,5 @@ MANIFEST_CHECK='(.Program | test("/bin/java$")) and (.Args | index("/app.jar") !
 # watched under strace, so nothing a jvm that serves a page never opens is in the package: no
 # fonts, no systemd, no apt
 SYSROOT_PRESENT="app.jar usr/lib/x86_64-linux-gnu/libc.so.6"
-SYSROOT_ABSENT="etc/systemd usr/share/fonts etc/fonts usr/lib/x86_64-linux-gnu/libapt-pkg.so.7.0 usr/lib/x86_64-linux-gnu/libfreetype.so.6"
+SYSROOT_ABSENT="etc/passwd etc/nsswitch.conf etc/systemd usr/share/fonts etc/fonts usr/lib/x86_64-linux-gnu/libapt-pkg.so.7.0 usr/lib/x86_64-linux-gnu/libfreetype.so.6"
 SYSROOT_MAX_MB=215

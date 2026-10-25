@@ -694,7 +694,7 @@ func TestLeaveOutTheOperatingSystemKeepsOnlyWhatWasWatched(t *testing.T) {
 	assert.True(t, existsForTest(root, "opt/java/bin/java"), "what the image put there itself")
 	assert.True(t, existsForTest(root, "usr/lib/libc.so.6"), "opened, through a link")
 	assert.True(t, existsForTest(root, "usr/share/perl/strict.pm"), "opened")
-	assert.True(t, existsForTest(root, "etc/nsswitch.conf"), "read by name")
+	assert.False(t, existsForTest(root, "etc/nsswitch.conf"), "not opened, and a jvm needs none of the names")
 	assert.False(t, existsForTest(root, "usr/bin/ldd"), "never opened")
 	assert.False(t, existsForTest(root, "etc/perl/Config.pm"), "never opened")
 }
@@ -710,6 +710,34 @@ func TestLeaveOutTheOperatingSystemLeavesOutTheEmptyDirectoriesOfTheSystemWhenWa
 	assert.False(t, existsForTest(root, "etc/systemd/user"), "empty, and the system's")
 	assert.False(t, existsForTest(root, "etc/systemd"), "empty once that is gone")
 	assert.True(t, existsForTest(root, "work/logs"), "under the kept trees")
+}
+
+func TestLeaveOutTheOperatingSystemKeepsWhatIsReadLaterByAProgramThatIsNotAJvm(t *testing.T) {
+	root := debianForTest(t)
+	writeForTest(t, root, "etc/ssl/certs/ca.pem", "cert")
+	writeForTest(t, root, "etc/passwd", "root:x:0:0\n")
+
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil, []string{"/lib/libc.so.6"}, nil)
+	assert.True(t, existsForTest(root, "etc/ssl/certs/ca.pem"), "a native program may connect after a minute")
+	assert.False(t, existsForTest(root, "etc/passwd"), "not opened")
+}
+
+func TestLeaveOutTheOperatingSystemLeavesOutTheCertificatesOfAJvm(t *testing.T) {
+	root := debianForTest(t)
+	writeForTest(t, root, "etc/ssl/certs/ca.pem", "cert")
+	writeForTest(t, root, "opt/java/lib/server/libjvm.so", "jvm")
+
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil,
+		[]string{"/lib/libc.so.6", "/opt/java/lib/server/libjvm.so"}, nil)
+	assert.False(t, existsForTest(root, "etc/ssl/certs/ca.pem"), "the jvm has its own")
+}
+
+func TestLeaveOutTheOperatingSystemKeepsWhatWasAskedFor(t *testing.T) {
+	root := debianForTest(t)
+	writeForTest(t, root, "etc/passwd", "root:x:0:0\n")
+
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil, []string{"/lib/libc.so.6"}, []string{"/etc/passwd"})
+	assert.True(t, existsForTest(root, "etc/passwd"))
 }
 
 func TestMainProgramLeavesTheTracerAlone(t *testing.T) {

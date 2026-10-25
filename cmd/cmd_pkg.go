@@ -862,6 +862,7 @@ func fromDockerfileCommand() *cobra.Command {
 	persistentFlags.Int("resolve-timeout", 60, "seconds to watch the image for")
 	persistentFlags.Bool("whole-image", false, "carry the whole file system of the image, operating system and all")
 	persistentFlags.Bool("no-trace", false, "with --resolve-entrypoint, do not watch which files the program opens, and carry what it is linked against instead")
+	persistentFlags.StringArray("keep", []string{}, "a file or directory of the image to carry whatever the program was seen to open, such as /etc/ssl (repeatable)")
 	persistentFlags.String("config-out", "", "where to write the ops config file (defaults to <name>.config.json)")
 
 	return cmdFromDockerfile
@@ -903,6 +904,7 @@ func fromDockerfileCommandHandler(cmd *cobra.Command, args []string) {
 	contextDir, _ := flags.GetString("context")
 	target, _ := flags.GetString("target")
 	configOut, _ := flags.GetString("config-out")
+	keepPaths, _ := flags.GetStringArray("keep")
 	noTrace, _ := flags.GetBool("no-trace")
 
 	rawArgs, err := flags.GetStringArray("build-arg")
@@ -932,6 +934,7 @@ func fromDockerfileCommandHandler(cmd *cobra.Command, args []string) {
 		WholeImage: wholeImage,
 		ConfigOut:  configOut,
 		NoTrace:    noTrace,
+		Keep:       keepPaths,
 	})
 	if err != nil {
 		exitWithError(err.Error())

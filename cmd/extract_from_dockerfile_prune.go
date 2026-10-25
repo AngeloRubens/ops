@@ -38,6 +38,29 @@ var alwaysKept = []string{
 	"/usr/share/zoneinfo", "/usr/share/ca-certificates", "/usr/lib/ssl", "/usr/lib/locale",
 }
 
+// readLater are the parts of alwaysKept a program that is not a jvm may open long after the first
+// minute, on its first connection or its first date: the certificates it trusts and the time zones.
+// A jvm carries its own certificates and time zone data.
+var readLater = []string{
+	"/etc/localtime", "/etc/timezone", "/etc/ssl", "/etc/pki", "/etc/ca-certificates",
+	"/etc/crypto-policies", "/usr/share/zoneinfo", "/usr/share/ca-certificates", "/usr/lib/ssl",
+}
+
+// keptByName is what is kept of the operating system because a program reads it by name. When the
+// program was watched, what it opened is already kept and the rest of that list is not, except what
+// a program that is not a jvm is likely to ask for later.
+func keptByName(watched bool, touched []string) []string {
+	if !watched {
+		return alwaysKept
+	}
+	for _, p := range touched {
+		if strings.HasSuffix(p, "/libjvm.so") {
+			return nil
+		}
+	}
+	return readLater
+}
+
 // systemTrees are where a distribution puts itself, and where a file the program never opened was
 // put by the distribution's scripts rather than by whoever built the image.
 var systemTrees = []string{
@@ -71,6 +94,7 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 
 	r := newReach(sysroot, env)
 	watched := len(touched) > 0
+	kept := keptByName(watched, touched)
 	if watched {
 		r.addAsIs(program)
 		for _, p := range mapped {
@@ -92,7 +116,7 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 	// machine cannot resolve its own name and a jvm cannot find its local host.
 	// The same goes for what those directories hold: a java.security on red hat includes a file
 	// under /etc/crypto-policies that is itself a link into /usr/share.
-	for _, p := range alwaysKept {
+	for _, p := range kept {
 		filepath.Walk(filepath.Join(sysroot, p), func(file string, info os.FileInfo, err error) error {
 			if err == nil {
 				if inside := inSysroot(sysroot, file); inside != "" {
@@ -187,7 +211,7 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		}
 		p := inSysroot(sysroot, file)
 		group, owned := owners[p]
-		if p == "" || !owned || group == application || underAny(p, alwaysKept) || underAny(p, keep) {
+		if p == "" || !owned || group == application || underAny(p, kept) || underAny(p, keep) {
 			return nil
 		}
 		if r.files[p] {
@@ -220,7 +244,7 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 				return nil
 			}
 			p := inSysroot(sysroot, file)
-			if p == "" || r.files[p] || underAny(p, alwaysKept) || underAny(p, keep) ||
+			if p == "" || r.files[p] || underAny(p, kept) || underAny(p, keep) ||
 				!underAny(p, systemTrees) || underAny(p, applicationTrees) {
 				return nil
 			}
@@ -249,7 +273,7 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 				return nil
 			}
 			p := inSysroot(sysroot, file)
-			if p == "" || r.files[p] || underAny(p, alwaysKept) {
+			if p == "" || r.files[p] || underAny(p, kept) || underAny(p, keep) {
 				return nil
 			}
 			if _, _, err := walkInRoot(sysroot, p); err != nil {
@@ -279,7 +303,7 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		filepath.Walk(sysroot, func(file string, info os.FileInfo, err error) error {
 			if err == nil && info.IsDir() {
 				p := inSysroot(sysroot, file)
-				if p != "" && underAny(p, []string{"/etc", "/usr"}) && !underAny(p, alwaysKept) &&
+				if p != "" && underAny(p, []string{"/etc", "/usr"}) && !underAny(p, kept) &&
 					!underAny(p, keep) && !underAny(p, applicationTrees) {
 					dirs = append(dirs, file)
 				}
