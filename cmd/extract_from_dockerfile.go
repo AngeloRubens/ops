@@ -305,7 +305,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		return "", "", err
 	}
 	if !opts.Quiet {
-		fmt.Printf("the ops config is %s; build the image with: ops image create -c %s --package %s\n",
+		fmt.Printf("the ops config is %s; build the image with: ops image create -c %s --package %s --local\n",
 			configOut, configOut, opts.PackageName)
 	}
 

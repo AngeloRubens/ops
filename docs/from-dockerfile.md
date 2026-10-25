@@ -132,7 +132,7 @@ The command prints what it did, in plain terms:
 
     the image docker built is 321 MB
     the file system is 197 MB: /opt 190MB /usr 6MB /etc 0MB
-    the ops config is hello-java.config.json; build the image with: ops image create -c hello-java.config.json --package hello-java
+    the ops config is hello-java.config.json; build the image with: ops image create -c hello-java.config.json --package hello-java --local
 
 The package is the JRE under `/opt/java/openjdk`, `app.jar`, `libc`, `libm`, `libdl`, `libpthread`,
 `librt` and the dynamic linker, and four files of `/etc` that the JVM opens as it starts
@@ -189,7 +189,7 @@ The file is the Ops configuration of the package, so it is the thing to edit whe
 should be different: more memory, another port, another environment variable, a different number of
 processors. Then build the image from it:
 
-    ops image create -c hello-java.config.json --package hello-java -i hello-java
+    ops image create -c hello-java.config.json --package hello-java --local -i hello-java
 
 For instance, to give the Java server more room and a second port:
 
