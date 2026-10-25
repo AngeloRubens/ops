@@ -4,5 +4,5 @@ DOCKERFILE=../payara/Dockerfile
 EXPECT=ok
 PORT=8080
 OUTPUT_MATCH="Payara"
-BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300"
+BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 300 --exercise /"
 BOOT_WAIT=900

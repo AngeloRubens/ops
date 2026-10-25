@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [nginx-single, wildfly-interpreted, keycloak-resolved, jenkins-resolved, mysql-resolved]
+        scenario: [wildfly-interpreted, payara-resolved]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
