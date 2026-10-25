@@ -211,6 +211,12 @@ The package carries what the program opened in the time it was watched. A file i
 certificate on the first connection, a plugin loaded after a minute - is not in the trace. There are
 three ways to put it back:
 
+- `--exercise <request>` (repeatable) asks the program for something once it is up, so that the files
+  it opens to answer are in the trace: `--exercise /health` takes a path against the first port the
+  image exposes, and `--exercise http://container:9000/ping` names the port. For a program that
+  does not speak HTTP, `--exercise-cmd 'redis-cli -h $OPS_HOST -p $OPS_PORT ping'` runs a command on
+  your side with the address of the container in `OPS_HOST` and `OPS_PORT`. The address is the one
+  Docker gives the container, so the requests need to reach it from where you run the command.
 - `--keep <path>` (repeatable) carries a file or a directory of the image whatever the program was
   seen to open: `--keep /etc/ssl`.
 - `--resolve-timeout <seconds>` watches the program for longer.
@@ -259,6 +265,8 @@ Some details that are worth knowing:
 | `--resolve-entrypoint` | run the image under `strace` to see what it starts and which files it opens |
 | `--resolve-timeout` | seconds to watch it for, 60 by default |
 | `--no-trace` | with `--resolve-entrypoint`, do not watch the files it opens: keep what it is linked against |
+| `--exercise` | with `--resolve-entrypoint`, a request made to the program once it is up (repeatable) |
+| `--exercise-cmd` | with `--resolve-entrypoint`, a command run once it is up, for a program that does not speak HTTP |
 | `--keep` | a file or directory of the image to carry whatever was opened (repeatable) |
 | `--smp` | the number of processors the machine is run with, which `/proc/cpuinfo` lists and the configuration carries, 1 by default |
 | `--config-out` | where to write the Ops configuration file, `<name>.config.json` by default |
