@@ -208,6 +208,11 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		touched := touchedPaths(trace, config.WorkingDir, []string{program})
 		if len(trace) > 0 && opts.Verbose {
 			fmt.Printf("watched the program open %d files\n", len(touched))
+			for _, f := range touched {
+				if strings.HasPrefix(f, "/etc/") {
+					fmt.Printf("  opened %s\n", f)
+				}
+			}
 		}
 		keep := []string{}
 		if wd := config.WorkingDir; wd != "" && wd != "/" {

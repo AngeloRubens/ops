@@ -4,7 +4,7 @@
 EXPECT=ok
 PORT=8080
 OUTPUT_MATCH="hello from java"
-BUILD_FLAGS="--resolve-entrypoint"
+BUILD_FLAGS="--resolve-entrypoint --verbose"
 MANIFEST_CHECK='(.Program | test("/bin/java$")) and (.Args | index("/app.jar") != null)'
 # watched under strace, so nothing a jvm that serves a page never opens is in the package: no
 # fonts, no systemd, no apt
