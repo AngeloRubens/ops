@@ -192,31 +192,44 @@ echo "=== $scenario: booting the package"
 boot_once() {
     : > "$boot"
     answer=""
+    from="$1"
+    instance="$pkg-from-config-machine"
 
-    if [ -n "$PORT" ]; then
-        timeout 1800 "$ops" pkg load -l "$pkg" --accel=false -p "$PORT" > "$boot" 2>&1 &
-        runner=$!
+    # The package is booted as it is, or the image built out of its config file is: an instance
+    # of that image, whose console is read with ops instance logs.
+    if [ "$from" = config ]; then
+        jq '.RunConfig.Accel = false' "$cfg" > "$cfg.boot.json"
+        # shellcheck disable=SC2086
+        timeout 1800 "$ops" instance create "$pkg-from-config" -i "$instance" -c "$cfg.boot.json" \
+            ${PORT:+-p "$PORT"} > "$boot.create" 2>&1 &
+    else
+        # shellcheck disable=SC2086
+        timeout 1800 "$ops" pkg load -l "$pkg" --accel=false ${PORT:+-p "$PORT"} > "$boot" 2>&1 &
+    fi
+    runner=$!
 
-        # ops returns once the machine is up, while the machine goes on running, so the thing to
-        # wait on is the answer rather than the process. A server that is not ready can answer all
-        # the same - traefik says "404 page not found" while it is still reading its configuration -
-        # so what is waited for is the answer that was asked for rather than the first to arrive.
-        for _ in $(seq 1 "$BOOT_WAIT"); do
+    # ops returns once the machine is up, while the machine goes on running, so the thing to wait
+    # on is the answer rather than the process. A server that is not ready can answer all the same
+    # - traefik says "404 page not found" while it is still reading its configuration - so what is
+    # waited for is the answer that was asked for rather than the first to arrive. A program that
+    # prints and stops is waited for in the same way: the console is read after the wait.
+    for _ in $(seq 1 "$BOOT_WAIT"); do
+        if [ -n "$PORT" ]; then
             answer="$(curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null)"
             printf '%s' "$answer" | grep -q -- "$OUTPUT_MATCH" && break
             sleep 2
-        done
-    else
-        # Whether the program prints and stops or prints and stays, what is being waited for is the
-        # line, not the end of it: the console is read after the wait, so that a program which
-        # prints and stops is still read.
-        timeout 1800 "$ops" pkg load -l "$pkg" --accel=false > "$boot" 2>&1 &
-        runner=$!
-
-        for _ in $(seq 1 "$BOOT_WAIT"); do
+        else
             sleep 2
+            if [ "$from" = config ]; then
+                "$ops" instance logs "$instance" > "$boot" 2>&1
+            fi
             grep -q -- "$OUTPUT_MATCH" "$boot" && break
-        done
+        fi
+    done
+
+    if [ "$from" = config ]; then
+        cat "$boot.create" >> "$boot" 2>/dev/null
+        "$ops" instance logs "$instance" >> "$boot" 2>&1
     fi
 
     kill $runner 2>/dev/null
@@ -239,6 +252,15 @@ if ! boot_once; then
             fail "the program did not print what it should (wanted: $OUTPUT_MATCH)"
         fi
     fi
+fi
+
+if [ -n "$IMAGE_FROM_CONFIG" ]; then
+    echo "=== $scenario: booting the image built from the config file"
+    if ! boot_once config; then
+        echo "=== $scenario: nothing of what was asked for, so once more"
+        boot_once config || fail "the image built from the config file did not do what it should (wanted: $OUTPUT_MATCH)" "got: $answer"
+    fi
+    echo "the image built from the config file answered"
 fi
 
 # what boots, weighed: the image ops built out of the package
