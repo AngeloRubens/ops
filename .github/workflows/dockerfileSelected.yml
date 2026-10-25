@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [wildfly-interpreted, payara-resolved]
+        scenario: [exercise, exercise-without, temurin-jre-resolved, mysql-resolved]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

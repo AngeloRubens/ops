@@ -1,6 +1,6 @@
 # Asked what it starts: standalone.sh ends in an exec of the jvm, so what comes back is the java
 # command line the script works out - which is a thing a manifest can hold. Booting it is left to
-# wildfly-interpreted, since a jvm compiling at full tilt under emulation is not steady enough to
+# the interpreted wildfly, since a jvm compiling at full tilt under emulation is not steady enough to
 # assert on.
 DOCKERFILE=../wildfly/Dockerfile
 EXPECT=package

@@ -113,7 +113,6 @@ jobs:
           - wordpress-php
           # the same images, asked what they start instead of read
           - wildfly-resolved
-          - wildfly-interpreted
           - wildfly-interpreted-whole
           - tomcat-resolved
           # the images people actually pull, with the configuration they carry
