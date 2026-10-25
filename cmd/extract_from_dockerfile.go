@@ -80,6 +80,13 @@ type DockerfileOptions struct {
 	// it is what /proc/cpuinfo lists, and it goes in the config file. One when zero.
 	Smp int
 
+	// Exercise are requests made to the program once it is up, so that the files it opens to answer
+	// are among those it was seen to open: a path against the first exposed port, or a url whose
+	// host is "container". ExerciseCmd is run on this side for a program that does not speak http,
+	// with OPS_HOST and OPS_PORT naming the container.
+	Exercise    []string
+	ExerciseCmd string
+
 	// Keep are files and trees of the image to carry whatever the program was seen to open.
 	Keep []string
 
@@ -147,7 +154,7 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 		}
 
 		found, err := resolveByRunning(ctx, cli, tag, opts.ResolveTimeout, opts.Verbose, tr,
-			config.Entrypoint, config.Cmd, config.WorkingDir)
+			config.Entrypoint, config.Cmd, config.WorkingDir, exerciseOf(opts, config.ExposedPorts))
 		if found != nil {
 			ran = found.id
 		}
@@ -522,7 +529,7 @@ type started struct {
 
 func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 	timeout time.Duration, verbose bool, tr *tracer, entrypoint []string, cmd []string,
-	workingDir string) (*started, error) {
+	workingDir string, ex *exerciseSpec) (*started, error) {
 	if timeout <= 0 {
 		timeout = time.Minute
 	}
@@ -552,6 +559,9 @@ func resolveByRunning(ctx context.Context, cli *dockerClient.Client, tag string,
 	watched := func() {
 		if tr == nil {
 			return
+		}
+		if !ex.empty() {
+			ex.run(ctx, cli, created.ID, verbose)
 		}
 		time.Sleep(3 * time.Second)
 		found.trace = tr.trace()
@@ -1342,6 +1352,16 @@ func environment(env []string) map[string]string {
 }
 
 // exposedPorts splits an EXPOSE set into the tcp and udp ports ops forwards.
+// exerciseOf is what is asked of the program, against the first port the image exposes.
+func exerciseOf(opts DockerfileOptions, exposed map[string]struct{}) *exerciseSpec {
+	tcp, _ := exposedPorts(exposed)
+	port := ""
+	if len(tcp) > 0 {
+		port = tcp[0]
+	}
+	return &exerciseSpec{urls: opts.Exercise, command: opts.ExerciseCmd, port: port}
+}
+
 func exposedPorts(exposed map[string]struct{}) ([]string, []string) {
 	var tcp, udp []string
 	for port := range exposed {

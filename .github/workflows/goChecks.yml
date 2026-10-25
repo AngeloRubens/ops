@@ -39,7 +39,7 @@ jobs:
       - name: test
         run: |
           go test ./fs/... -count 1 -run 'LinkTargetExists|AddLink'
-          go test ./cmd/... -count 1 -run 'EntrypointArgv|ResolveInRoot|ResolveProgram|MainProgram|ExposedPorts|Environment|WriteHosts|VolumeSize|IsKernelPath|ResolveBuildContext|StatusField|WalkInRoot|PackageOwners|LeaveOutTheOperatingSystem|LibraryDirs|FindLibrary|MappedPaths|NamedIn|OpenedByName|RpmSource|NssServices|ExactArgv|ListeningIn|WriteMachineFiles|TouchedPaths'
+          go test ./cmd/... -count 1 -run 'EntrypointArgv|ResolveInRoot|ResolveProgram|MainProgram|ExposedPorts|Environment|WriteHosts|VolumeSize|IsKernelPath|ResolveBuildContext|StatusField|WalkInRoot|PackageOwners|LeaveOutTheOperatingSystem|LibraryDirs|FindLibrary|MappedPaths|NamedIn|OpenedByName|RpmSource|NssServices|ExactArgv|ListeningIn|WriteMachineFiles|TouchedPaths|Exercise'
 
       - name: build
         run: go build -o ops -v

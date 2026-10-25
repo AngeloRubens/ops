@@ -860,3 +860,40 @@ func TestLeaveOutTheOperatingSystemKeepsWhatIsUnderTheKeptTrees(t *testing.T) {
 	assert.True(t, existsForTest(root, "etc/app/data"), "the working directory is the program's own")
 	assert.False(t, existsForTest(root, "etc/other.conf"), "never opened")
 }
+
+func TestExerciseURLTakesAPathAgainstTheContainer(t *testing.T) {
+	address, err := exerciseURL("/health?full=1", "172.17.0.2", "8080")
+	assert.NoError(t, err)
+	assert.Equal(t, "http://172.17.0.2:8080/health?full=1", address)
+
+	address, err = exerciseURL("/", "172.17.0.2", "")
+	assert.NoError(t, err)
+	assert.Equal(t, "http://172.17.0.2:80/", address)
+}
+
+func TestExerciseURLTakesTheHostContainerForTheContainer(t *testing.T) {
+	address, err := exerciseURL("https://container:9443/ping", "172.17.0.2", "8080")
+	assert.NoError(t, err)
+	assert.Equal(t, "https://172.17.0.2:9443/ping", address)
+
+	address, err = exerciseURL("http://container/ping", "172.17.0.2", "8080")
+	assert.NoError(t, err)
+	assert.Equal(t, "http://172.17.0.2:8080/ping", address)
+}
+
+func TestExerciseURLRefusesWhatIsNotTheContainer(t *testing.T) {
+	_, err := exerciseURL("http://example.com/ping", "172.17.0.2", "8080")
+	assert.Error(t, err)
+
+	_, err = exerciseURL("ping", "172.17.0.2", "8080")
+	assert.Error(t, err)
+}
+
+func TestExerciseOfTakesTheFirstExposedPort(t *testing.T) {
+	ex := exerciseOf(DockerfileOptions{Exercise: []string{"/a"}, ExerciseCmd: "true"},
+		map[string]struct{}{"9000/tcp": {}, "8080/tcp": {}, "53/udp": {}})
+
+	assert.Equal(t, "8080", ex.port)
+	assert.False(t, ex.empty())
+	assert.True(t, (&exerciseSpec{}).empty())
+}

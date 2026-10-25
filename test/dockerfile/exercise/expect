@@ -1,0 +1,5 @@
+# A server that opens a file of the distribution only when it is asked for /license. Asked for it by
+# --exercise, the file is among those the program was seen to open and is in the package.
+EXPECT=package
+BUILD_FLAGS="--resolve-entrypoint --exercise /license --verbose"
+SYSROOT_PRESENT="usr/share/common-licenses/GPL-3"

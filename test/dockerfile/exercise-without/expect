@@ -1,0 +1,5 @@
+# The same server watched and left alone: nothing asks for /license, so the file the program would
+# open for it is not in the package. This is what --exercise is for.
+EXPECT=package
+BUILD_FLAGS="--resolve-entrypoint"
+SYSROOT_ABSENT="usr/share/common-licenses/GPL-3"

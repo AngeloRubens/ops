@@ -863,6 +863,8 @@ func fromDockerfileCommand() *cobra.Command {
 	persistentFlags.Bool("whole-image", false, "carry the whole file system of the image, operating system and all")
 	persistentFlags.Bool("no-trace", false, "with --resolve-entrypoint, do not watch which files the program opens, and carry what it is linked against instead")
 	persistentFlags.Int("smp", 1, "number of processors the machine is run with, which /proc/cpuinfo lists and the config file carries")
+	persistentFlags.StringArray("exercise", []string{}, "with --resolve-entrypoint, a request made to the program once it is up, so that the files it opens to answer are carried: a path such as /health, or a url on the host \"container\" (repeatable)")
+	persistentFlags.String("exercise-cmd", "", "with --resolve-entrypoint, a command run once the program is up, with OPS_HOST and OPS_PORT naming the container, for a program that does not speak http")
 	persistentFlags.StringArray("keep", []string{}, "a file or directory of the image to carry whatever the program was seen to open, such as /etc/ssl (repeatable)")
 	persistentFlags.String("config-out", "", "where to write the ops config file (defaults to <name>.config.json)")
 
@@ -907,6 +909,8 @@ func fromDockerfileCommandHandler(cmd *cobra.Command, args []string) {
 	configOut, _ := flags.GetString("config-out")
 	keepPaths, _ := flags.GetStringArray("keep")
 	smp, _ := flags.GetInt("smp")
+	exercise, _ := flags.GetStringArray("exercise")
+	exerciseCmd, _ := flags.GetString("exercise-cmd")
 	noTrace, _ := flags.GetBool("no-trace")
 
 	rawArgs, err := flags.GetStringArray("build-arg")
@@ -938,6 +942,9 @@ func fromDockerfileCommandHandler(cmd *cobra.Command, args []string) {
 		NoTrace:    noTrace,
 		Keep:       keepPaths,
 		Smp:        smp,
+
+		Exercise:    exercise,
+		ExerciseCmd: exerciseCmd,
 	})
 	if err != nil {
 		exitWithError(err.Error())
