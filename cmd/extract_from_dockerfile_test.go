@@ -327,7 +327,7 @@ func TestWriteHostsGivesLocalhostAnAddress(t *testing.T) {
 func TestWriteMachineFilesCountsTheProcessors(t *testing.T) {
 	root := t.TempDir()
 
-	assert.NoError(t, writeMachineFiles(root, "amd64"))
+	assert.NoError(t, writeMachineFiles(root, "amd64", nil))
 
 	cpuinfo, err := os.ReadFile(filepath.Join(root, "proc", "cpuinfo"))
 	assert.NoError(t, err)
@@ -351,16 +351,40 @@ func TestWriteMachineFilesCountsTheProcessors(t *testing.T) {
 		stat, err := os.ReadFile(filepath.Join(root, "proc", pid, "stat"))
 		assert.NoError(t, err)
 		words := strings.Fields(string(stat))
-		assert.GreaterOrEqual(t, len(words), 22)
+		assert.Len(t, words, 52)
 		assert.Equal(t, pid, words[0])
 		assert.Equal(t, "(program)", words[1])
 	}
 }
 
+func TestWriteMachineFilesWritesOnlyWhatTheProgramOpened(t *testing.T) {
+	root := t.TempDir()
+
+	assert.NoError(t, writeMachineFiles(root, "amd64", []string{"/proc/cpuinfo", "/proc/4242/stat", "/etc/hosts"}))
+
+	for _, name := range []string{"proc/cpuinfo", "proc/1/stat", "proc/2/stat", "proc/3/stat"} {
+		_, err := os.Stat(filepath.Join(root, name))
+		assert.NoError(t, err, name)
+	}
+	for _, name := range []string{"proc/diskstats", "sys/devices/system/cpu/possible"} {
+		_, err := os.Stat(filepath.Join(root, name))
+		assert.Error(t, err, name)
+	}
+}
+
+func TestWriteMachineFilesWritesNothingTheProgramDidNotOpen(t *testing.T) {
+	root := t.TempDir()
+
+	assert.NoError(t, writeMachineFiles(root, "amd64", []string{"/etc/hosts", "/proc/7/task/7/stat"}))
+
+	_, err := os.Stat(filepath.Join(root, "proc"))
+	assert.Error(t, err)
+}
+
 func TestWriteMachineFilesLeavesTheKernelToAnswerOnArm(t *testing.T) {
 	root := t.TempDir()
 
-	assert.NoError(t, writeMachineFiles(root, "arm64"))
+	assert.NoError(t, writeMachineFiles(root, "arm64", nil))
 
 	_, err := os.Stat(filepath.Join(root, "proc", "cpuinfo"))
 	assert.Error(t, err)

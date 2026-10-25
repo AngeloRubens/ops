@@ -192,10 +192,6 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 	if err := writeHosts(sysroot); err != nil {
 		return "", "", err
 	}
-	if err := writeMachineFiles(sysroot, opts.Arch); err != nil {
-		return "", "", err
-	}
-
 	program, err := resolveProgram(sysroot, argv[0], config.WorkingDir, config.Env)
 	if err != nil {
 		return "", "", err
@@ -203,9 +199,19 @@ func BuildFromDockerfile(opts DockerfileOptions) (string, string, error) {
 
 	if opts.WholeImage {
 		fmt.Println("the whole file system of the image is carried, operating system and all")
+		if err := writeMachineFiles(sysroot, opts.Arch, nil); err != nil {
+			return "", "", err
+		}
 	} else {
 		// only what the program and the processes it made opened, not the tools of its launcher
 		touched := touchedPaths(trace, config.WorkingDir, []string{program})
+		var opened []string
+		if len(trace) > 0 {
+			opened = touched
+		}
+		if err := writeMachineFiles(sysroot, opts.Arch, opened); err != nil {
+			return "", "", err
+		}
 		if len(trace) > 0 && opts.Verbose {
 			fmt.Printf("watched the program open %d files\n", len(touched))
 			for _, f := range touched {
@@ -990,7 +996,7 @@ func writeHosts(sysroot string) error {
 //
 // Only on x86_64: on aarch64 the kernel answers for cpuinfo itself, and a file of ours in its place
 // would stop it from starting at all, since it asserts that it can make its own.
-func writeMachineFiles(sysroot string, arch string) error {
+func writeMachineFiles(sysroot string, arch string, opened []string) error {
 	if arch == "" {
 		arch = runtime.GOARCH
 	}
@@ -1030,12 +1036,15 @@ func writeMachineFiles(sysroot string, arch string) error {
 		"proc/cpuinfo":                    "processor\t: 0\n\n",
 		"sys/devices/system/cpu/possible": "0-63\n",
 		"proc/diskstats":                  "   0       0 vda 0 0 0 0 0 0 0 0 0 0 0\n",
-		"proc/1/stat":                     "1 (program) R 0 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 0\n",
-		"proc/2/stat":                     "2 (program) R 0 2 2 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 0\n",
-		"proc/3/stat":                     "3 (program) R 0 3 3 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 0\n",
+		"proc/1/stat":                     processStat(1),
+		"proc/2/stat":                     processStat(2),
+		"proc/3/stat":                     processStat(3),
 	}
 
 	for name, says := range machine {
+		if opened != nil && !openedAny(opened, name) {
+			continue
+		}
 		path := filepath.Join(sysroot, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			return err
@@ -1046,6 +1055,33 @@ func writeMachineFiles(sysroot string, arch string) error {
 	}
 
 	return nil
+}
+
+// processStat is the line a process of Linux has in /proc/<pid>/stat: fifty-two words, since a
+// reader that takes the twenty-fourth for the resident memory does not count them first.
+func processStat(pid int) string {
+	words := []string{strconv.Itoa(pid), "(program)", "R", "0", strconv.Itoa(pid), strconv.Itoa(pid)}
+	for len(words) < 52 {
+		words = append(words, "0")
+	}
+	return strings.Join(words, " ") + "\n"
+}
+
+// openedAny reports whether the program opened the machine file called name, or for the file of a
+// process any of them: the number it was given in the container is not the one it will have.
+func openedAny(opened []string, name string) bool {
+	process := strings.HasPrefix(name, "proc/") && strings.HasSuffix(name, "/stat") &&
+		name != "proc/diskstats"
+	for _, p := range opened {
+		if p == "/"+name {
+			return true
+		}
+		if process && strings.HasPrefix(p, "/proc/") && strings.HasSuffix(p, "/stat") &&
+			strings.Count(p, "/") == 3 {
+			return true
+		}
+	}
+	return false
 }
 
 // entrypointArgv works out what the image would run, the way docker does: the entrypoint with
