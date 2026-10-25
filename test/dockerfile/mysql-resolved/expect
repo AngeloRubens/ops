@@ -6,3 +6,4 @@ OUTPUT_MATCH="ready for connections"
 BUILD_FLAGS="--resolve-entrypoint --resolve-timeout 240"
 BOOT_WAIT=600
 MANIFEST_CHECK='(.Program | test("mysqld$"))'
+IMAGE_FROM_CONFIG=1

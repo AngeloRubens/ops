@@ -47,6 +47,7 @@ MANIFEST_CHECK=""
 SYSROOT_ABSENT=""
 SYSROOT_PRESENT=""
 SYSROOT_MAX_MB=""
+IMAGE_FROM_CONFIG=""
 # shellcheck disable=SC1091
 . "$dir/expect"
 
@@ -166,6 +167,16 @@ if [ -n "$SYSROOT_MAX_MB" ]; then
     weight=$(du -sm "$root" | cut -f1)
     [ "$weight" -le "$SYSROOT_MAX_MB" ] || fail "the package weighs $weight MB, more than $SYSROOT_MAX_MB"
     echo "the package weighs $weight MB"
+fi
+
+# the image built from the config file the command left, which is how a package is built again
+# after the file has been edited
+if [ -n "$IMAGE_FROM_CONFIG" ]; then
+    echo "=== $scenario: ops image create -c $cfg --package $pkg"
+    "$ops" image create -c "$cfg" --package "$pkg" -i "$pkg-from-config" > "$log.image" 2>&1 \
+        || { tail -20 "$log.image"; fail "the image could not be built out of the config file"; }
+    [ -f "$HOME/.ops/images/$pkg-from-config.img" ] || { cat "$log.image"; fail "no image came out of the config file"; }
+    echo "image built from the config file: $(du -sm "$HOME/.ops/images/$pkg-from-config.img" | cut -f1) MB"
 fi
 
 if [ "$EXPECT" = package ]; then
