@@ -699,6 +699,19 @@ func TestLeaveOutTheOperatingSystemKeepsOnlyWhatWasWatched(t *testing.T) {
 	assert.False(t, existsForTest(root, "etc/perl/Config.pm"), "never opened")
 }
 
+func TestLeaveOutTheOperatingSystemLeavesOutTheEmptyDirectoriesOfTheSystemWhenWatched(t *testing.T) {
+	root := debianForTest(t)
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "etc", "systemd", "user"), 0755))
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "work", "logs"), 0755))
+
+	leaveOutTheOperatingSystem(root, "/opt/java/bin/java", nil, nil,
+		[]string{"/lib/libc.so.6"}, []string{"/work"})
+
+	assert.False(t, existsForTest(root, "etc/systemd/user"), "empty, and the system's")
+	assert.False(t, existsForTest(root, "etc/systemd"), "empty once that is gone")
+	assert.True(t, existsForTest(root, "work/logs"), "under the kept trees")
+}
+
 func TestMainProgramLeavesTheTracerAlone(t *testing.T) {
 	top := dockerContainer.TopResponse{
 		Titles: []string{"PID", "PPID", "ARGS"},

@@ -270,6 +270,28 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 		}
 	}
 
+	// What the distribution lays out and the package that owned it takes along - /etc/systemd/user
+	// is empty from the day systemd is installed - was never in a list of files to take out. Where
+	// the program was watched, an empty directory of /etc or /usr is not somewhere it was seen to
+	// write; /var is left, where a program may be told to log.
+	if watched {
+		var dirs []string
+		filepath.Walk(sysroot, func(file string, info os.FileInfo, err error) error {
+			if err == nil && info.IsDir() {
+				p := inSysroot(sysroot, file)
+				if p != "" && underAny(p, []string{"/etc", "/usr"}) && !underAny(p, alwaysKept) &&
+					!underAny(p, keep) && !underAny(p, applicationTrees) {
+					dirs = append(dirs, file)
+				}
+			}
+			return nil
+		})
+		sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
+		for _, dir := range dirs {
+			os.Remove(dir)
+		}
+	}
+
 	names := make([]string, 0, len(dropped))
 	for name := range dropped {
 		names = append(names, name)
