@@ -49,7 +49,7 @@ jobs:
       - name: What the package looks like
         if: always()
         run: |
-          for p in "$HOME"/.ops/local_packages/*/*temurin*; do
+          for p in "$HOME"/.ops/local_packages/*/dockerfile-test-*; do
             [ -d "$p/sysroot" ] || continue
             echo "--- $p/package.manifest"; cat "$p/package.manifest"
             echo "--- $p/sysroot"
@@ -58,6 +58,10 @@ jobs:
             (cd "$p/sysroot" && find etc/systemd -ls 2>/dev/null | head -30)
             echo "--- usr"
             (cd "$p/sysroot" && du -sh usr/* usr/lib/* usr/share/* 2>/dev/null | sort -h | tail -15)
+            echo "--- what weighs, five levels down"
+            (cd "$p/sysroot" && du -x --max-depth=5 -m . 2>/dev/null | sort -n | tail -40)
+            echo "--- the biggest files"
+            (cd "$p/sysroot" && find . -type f -size +5M -printf '%s\t%p\n' | sort -n | tail -25)
             echo "--- libraries"
             (cd "$p/sysroot" && find lib lib64 usr/lib -maxdepth 3 \( -type f -o -type l \) 2>/dev/null | sort)
           done
