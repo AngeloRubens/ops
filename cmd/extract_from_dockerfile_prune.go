@@ -156,8 +156,12 @@ func leaveOutTheOperatingSystem(sysroot string, program string, mapped []string,
 	// So its package stays whole, with the packages built from the same source, since apache's
 	// configuration is packaged apart from its binary. What they link against comes with them, and
 	// nothing else of the system does.
+	//
+	// A program that was watched is not given this: what it opened is what it needs, and the shell,
+	// the clients and the plugins that come in the same package are not among it. What it reads
+	// later is for --exercise and --keep to say.
 	application := ""
-	if resolved, err := resolveInRoot(sysroot, program); err == nil {
+	if resolved, err := resolveInRoot(sysroot, program); err == nil && !watched {
 		application = owners[resolved]
 	}
 	if application != "" {

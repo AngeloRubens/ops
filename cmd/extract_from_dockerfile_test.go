@@ -775,6 +775,23 @@ func TestLeaveOutTheOperatingSystemKeepsWhatWasAskedFor(t *testing.T) {
 	assert.True(t, existsForTest(root, "etc/passwd"))
 }
 
+func TestLeaveOutTheOperatingSystemKeepsTheWholeOfTheApplicationWhenNotWatched(t *testing.T) {
+	root := debianForTest(t)
+
+	leaveOutTheOperatingSystem(root, "/usr/bin/perl", nil, nil, nil, nil)
+
+	assert.True(t, existsForTest(root, "usr/share/perl/strict.pm"), "of the package the program comes in")
+}
+
+func TestLeaveOutTheOperatingSystemLeavesOutWhatTheApplicationNeverOpenedWhenWatched(t *testing.T) {
+	root := debianForTest(t)
+
+	leaveOutTheOperatingSystem(root, "/usr/bin/perl", nil, nil, []string{"/lib/libc.so.6"}, nil)
+
+	assert.True(t, existsForTest(root, "usr/bin/perl"), "the program")
+	assert.False(t, existsForTest(root, "usr/share/perl/strict.pm"), "in its package, and never opened")
+}
+
 func TestMainProgramLeavesTheTracerAlone(t *testing.T) {
 	top := dockerContainer.TopResponse{
 		Titles: []string{"PID", "PPID", "ARGS"},
