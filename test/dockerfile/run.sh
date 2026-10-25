@@ -192,7 +192,7 @@ echo "=== $scenario: booting the package"
 boot_once() {
     : > "$boot"
     answer=""
-    from="$1"
+    from="${1:-}"
     instance="$pkg-from-config-machine"
 
     # The package is booted as it is, or the image built out of its config file is: an instance
