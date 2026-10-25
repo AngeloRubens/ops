@@ -198,7 +198,7 @@ boot_once() {
     # The package is booted as it is, or the image built out of its config file is: an instance
     # of that image, whose console is read with ops instance logs.
     if [ "$from" = config ]; then
-        jq '.RunConfig.Accel = false' "$cfg" > "$cfg.boot.json"
+        jq '.RunConfig.Accel = false | .RunConfig.Memory = "2g"' "$cfg" > "$cfg.boot.json"
         # shellcheck disable=SC2086
         timeout 1800 "$ops" instance create "$pkg-from-config" -i "$instance" -c "$cfg.boot.json" \
             ${PORT:+-p "$PORT"} > "$boot.create" 2>&1 &

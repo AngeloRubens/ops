@@ -60,6 +60,17 @@ A few rules follow from the principle:
 - Without `strace` (`--no-trace`, or an image that cannot be run) the command falls back to a more
   careful rule: it keeps what the program is linked against, which is more than it uses.
 
+## Requirements
+
+- Docker, reachable by the user who runs the command: the image is built and run with it.
+- To watch the program, the command fetches `alpine:3.20` from Docker Hub once, takes the `strace`
+  that Alpine builds against musl, and starts the image with it in front of the entrypoint. That
+  needs access to the registry, and a container that is allowed `SYS_PTRACE` and runs without the
+  default seccomp filter. Where that is not allowed, the command says so and carries what the
+  program is linked against instead, as `--no-trace` does.
+- The requests of `--exercise` go to the address Docker gives the container, which the machine
+  running the command reaches on Linux. Docker Desktop on macOS and Windows does not route to it.
+
 ## How it works
 
 1. **Build.** The Dockerfile is built with Docker (BuildKit), so multi-stage builds, `COPY --chmod`,
@@ -191,13 +202,13 @@ processors. Then build the image from it:
 
     ops image create -c hello-java.config.json --package hello-java --local -i hello-java
 
-For instance, to give the Java server more room and a second port:
+For instance, to give the machine 2 GB of memory, add it to the file:
 
 ```json
 {
   "Program": "/opt/java/openjdk/bin/java",
-  "Args": ["java", "-Xmx512m", "-jar", "/app.jar"],
-  "RunConfig": { "Ports": ["8080", "8081"], "Memory": "1g" }
+  "Args": ["java", "-jar", "/app.jar"],
+  "RunConfig": { "Memory": "2g" }
 }
 ```
 
