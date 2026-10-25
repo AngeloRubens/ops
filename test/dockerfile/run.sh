@@ -213,7 +213,13 @@ boot_once() {
     # - traefik says "404 page not found" while it is still reading its configuration - so what is
     # waited for is the answer that was asked for rather than the first to arrive. A program that
     # prints and stops is waited for in the same way: the console is read after the wait.
-    for _ in $(seq 1 "$BOOT_WAIT"); do
+    for waited in $(seq 1 "$BOOT_WAIT"); do
+        # What the machine has printed so far, now and then, so that a wait that ends in the
+        # time limit of the job still shows what it was doing.
+        if [ $((waited % 100)) -eq 0 ] && [ -z "$from" ]; then
+            echo "--- $scenario: console after $waited waits"
+            tail -n 15 "$boot" | cut -c1-300
+        fi
         if [ -n "$PORT" ]; then
             answer="$(curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null)"
             printf '%s' "$answer" | grep -q -- "$OUTPUT_MATCH" && break
