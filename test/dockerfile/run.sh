@@ -254,7 +254,9 @@ if ! boot_once; then
     fi
 fi
 
-if [ -n "$IMAGE_FROM_CONFIG" ]; then
+# Only a server that answers on a port is booted this way: an instance's console is not read back
+# by ops instance logs, so a program that is known by what it prints is only built.
+if [ -n "$IMAGE_FROM_CONFIG" ] && [ -n "$PORT" ]; then
     echo "=== $scenario: booting the image built from the config file"
     if ! boot_once config; then
         echo "=== $scenario: nothing of what was asked for, so once more"
