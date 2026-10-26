@@ -209,12 +209,8 @@ package then carries the initialised data directory, and the server on the conso
 |---|---|---|---|
 | MySQL 8.4 | 772 MB | 938 MB | 950 MB |
 
-The package is larger than the Docker image because the Docker figure is the size of the layers,
-and the package file system is measured as files on disk. Of the 938 MB, `/usr` is 727 MB (the
-server, its client tools and MySQL Shell) and `/var` is 208 MB, most of it the initialised data
-directory that the package carries. MySQL is the heaviest package of the ones this was tested with:
-the program watched here is the server, but the files the image installs for the application
-are kept with it.
+Of the 938 MB, `/usr` is 727 MB and `/var` is 208 MB, most of it the initialised data directory
+that the package carries. MySQL is the heaviest package of the ones this was tested with.
 
 ## Building the image again from the configuration file
 
