@@ -159,6 +159,17 @@ and `hello-java.config.json` are the same file:
 }
 ```
 
+### Sizes
+
+| | Docker image | Package file system | Ops image (from the config file) |
+|---|---|---|---|
+| Temurin JRE (`eclipse-temurin:25-jre`) | 321 MB | 197 MB | 200 MB |
+
+Nearly all of the 197 MB is the JRE itself (190 MB in `/opt`, 6 MB in `/usr`), which is what a
+hand-made JRE package carries as well. The 1422 MB of the operating system that the image sits on
+and the program never reaches were left out. A JVM is not a small program, and what is left is the
+JRE and almost nothing else.
+
 ### The Dockerfile that Adoptium publishes
 
 The Dockerfiles Adoptium publishes (the `adoptium/containers` repository) build as they are. The
@@ -191,6 +202,19 @@ so `--user=root` is how it is told.
 `--resolve-timeout 240` gives the image four minutes to initialise before the program is read; the
 package then carries the initialised data directory, and the server on the console says
 `ready for connections`.
+
+### Sizes
+
+| | Docker image | Package file system | Ops image (from the config file) |
+|---|---|---|---|
+| MySQL 8.4 | 772 MB | 938 MB | 950 MB |
+
+The package is larger than the Docker image because the Docker figure is the size of the layers,
+and the package file system is measured as files on disk. Of the 938 MB, `/usr` is 727 MB (the
+server, its client tools and MySQL Shell) and `/var` is 208 MB, most of it the initialised data
+directory that the package carries. MySQL is the heaviest package of the ones this was tested with:
+the program watched here is the server, but the files the image installs for the application
+are kept with it.
 
 ## Building the image again from the configuration file
 
