@@ -24,10 +24,17 @@ import (
 	"github.com/nanovms/ops/types"
 )
 
-// What a program needs to start and to keep running is what it opens while it does. An image run
-// under strace gives that list: the libraries the program is linked against and the ones it loads by
-// name, the configuration it reads, the data it opens. Those files, and nothing else of the image,
-// are what the package carries.
+// The rule: the package carries the files the program reaches.
+//
+// A program reaches a file in two ways. It asks for it, with a call that names it: open, stat,
+// readlink, execve. An image run under strace gives that list, from the first instruction on: the
+// libraries the program is linked against and the ones it loads by name, the configuration it
+// reads, the data it opens. And the kernel asks for a file on its behalf when it executes a
+// program: the interpreter that program names, which is the dynamic loader of an ELF file or the
+// program after #! in a script. No call of the program names that file, so it is added for every
+// file the program executed, and for the interpreter of that interpreter, and so on.
+//
+// Nothing else of the image is carried.
 
 // traceMount is where the directory holding strace, and the list it writes, is seen from inside
 // the container.
@@ -213,8 +220,9 @@ func resultOf(after string) (string, bool) {
 // its end written on another line - is taken, since a file looked for is a file that may be needed.
 // A path that is not absolute is read against workingDir when it was relative to the working
 // directory, and left out when it was relative to a file descriptor that is not known here.
-func touchedPaths(trace []byte, workingDir string) []string {
+func touchedPaths(trace []byte, workingDir string) (paths []string, executed []string) {
 	seen := map[string]bool{}
+	ran := map[string]bool{}
 
 	for _, line := range strings.Split(string(trace), "\n") {
 		call := traceCall.FindStringSubmatch(line)
@@ -240,15 +248,21 @@ func touchedPaths(trace []byte, workingDir string) []string {
 			name = path.Join(workingDir, name)
 		}
 		seen[path.Clean(name)] = true
+		if call[1] == "execve" {
+			ran[path.Clean(name)] = true
+		}
 	}
 
-	paths := make([]string, 0, len(seen))
 	for p := range seen {
 		paths = append(paths, p)
 	}
+	for p := range ran {
+		executed = append(executed, p)
+	}
 	sort.Strings(paths)
+	sort.Strings(executed)
 
-	return paths
+	return paths, executed
 }
 
 // notCarried says whether a path is one the kernel of the machine makes or the container runtime
@@ -264,9 +278,7 @@ func notCarried(p string) bool {
 
 // copyTouched copies the files that were opened out of the container into sysroot. A symbolic link
 // is made as a link and its target is carried too, since the program reached the target through it.
-// It returns the regular files that were copied.
-func copyTouched(ctx context.Context, cli *dockerClient.Client, containerID string, sysroot string, paths []string, verbose bool) []string {
-	var copied []string
+func copyTouched(ctx context.Context, cli *dockerClient.Client, containerID string, sysroot string, paths []string, verbose bool) {
 	done := map[string]bool{}
 	queue := append([]string{}, paths...)
 
@@ -320,37 +332,84 @@ func copyTouched(ctx context.Context, cli *dockerClient.Client, containerID stri
 			}
 			io.Copy(out, tr)
 			out.Close()
-			copied = append(copied, p)
 		}
 		reader.Close()
 	}
-
-	return copied
 }
 
-// interpreters are the dynamic loaders the programs that were carried ask the kernel for. The
-// kernel loads one itself when it starts the program, so it is never among the files the program
-// opened.
-func interpreters(sysroot string, paths []string) []string {
-	var found []string
-	seen := map[string]bool{}
-	for _, p := range paths {
-		f, err := elf.Open(filepath.Join(sysroot, p))
-		if err != nil {
-			continue
+// inSysroot follows the symbolic links of a path that was carried, inside the sysroot rather than
+// on this machine, and gives the path of the file they lead to.
+func inSysroot(sysroot string, p string) string {
+	for i := 0; i < 16; i++ {
+		info, err := os.Lstat(filepath.Join(sysroot, p))
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			return p
 		}
-		section := f.Section(".interp")
-		if section != nil {
+		link, err := os.Readlink(filepath.Join(sysroot, p))
+		if err != nil {
+			return p
+		}
+		if !strings.HasPrefix(link, "/") {
+			link = path.Join(path.Dir(p), link)
+		}
+		p = path.Clean(link)
+	}
+	return p
+}
+
+// interpreterOf is the file the kernel loads to run a program: the dynamic loader named by an ELF
+// file, or the program a script names after #!. A file that names none, a static binary or a
+// library, gives "".
+func interpreterOf(file string) string {
+	if f, err := elf.Open(file); err == nil {
+		defer f.Close()
+		if section := f.Section(".interp"); section != nil {
 			if raw, err := section.Data(); err == nil {
-				if interp := strings.TrimRight(string(raw), "\x00"); interp != "" && !seen[interp] {
-					seen[interp] = true
-					found = append(found, interp)
-				}
+				return strings.TrimRight(string(raw), "\x00")
 			}
 		}
-		f.Close()
+		return ""
 	}
-	return found
+
+	in, err := os.Open(file)
+	if err != nil {
+		return ""
+	}
+	defer in.Close()
+	head := make([]byte, 256)
+	n, _ := in.Read(head)
+	if n < 2 || head[0] != '#' || head[1] != '!' {
+		return ""
+	}
+	line := strings.SplitN(string(head[2:n]), "\n", 2)[0]
+	if fields := strings.Fields(line); len(fields) > 0 {
+		return fields[0]
+	}
+	return ""
+}
+
+// carryInterpreters copies, for each file that was executed, the interpreter the kernel loads for
+// it, then the interpreter of that one if it has one. It is the second half of the rule.
+func carryInterpreters(ctx context.Context, cli *dockerClient.Client, containerID string, sysroot string, executed []string, verbose bool) {
+	done := map[string]bool{}
+	queue := append([]string{}, executed...)
+
+	for len(queue) > 0 {
+		p := queue[0]
+		queue = queue[1:]
+
+		interp := interpreterOf(filepath.Join(sysroot, inSysroot(sysroot, p)))
+		if interp == "" || done[interp] {
+			continue
+		}
+		done[interp] = true
+
+		if verbose {
+			fmt.Printf("%s is run by %s\n", p, interp)
+		}
+		copyTouched(ctx, cli, containerID, sysroot, []string{interp}, verbose)
+		queue = append(queue, interp)
+	}
 }
 
 // imageProgram is what an image starts when it is not told otherwise, and the directory and
@@ -467,7 +526,7 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 	case <-time.After(time.Duration(seconds) * time.Second):
 	}
 	// the list is written as the program goes, so what it has opened so far is in it
-	touched := touchedPaths(tr.trace(), workingDir)
+	touched, executed := touchedPaths(tr.trace(), workingDir)
 	if len(touched) == 0 {
 		log.Fatalf("%s opened nothing in %d seconds", imageName, seconds)
 	}
@@ -484,8 +543,8 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		log.Fatal(err)
 	}
 
-	copied := copyTouched(ctx, cli, created.ID, sysroot, touched, verbose)
-	copyTouched(ctx, cli, created.ID, sysroot, interpreters(sysroot, copied), verbose)
+	copyTouched(ctx, cli, created.ID, sysroot, touched, verbose)
+	carryInterpreters(ctx, cli, created.ID, sysroot, executed, verbose)
 
 	program := whereIs(sysroot, argv[0], env)
 	if _, err := os.Stat(filepath.Join(sysroot, program)); err != nil {
