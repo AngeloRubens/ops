@@ -211,48 +211,61 @@ jobs:
           pkill -f qemu-system || true
           if [ $ok = 1 ]; then echo "DIAG BOOT PASS $NAME with a request during the trace"; else echo "DIAG BOOT FAIL $NAME"; tail -20 boot2.log; fi
       # Diagnosis only: the package booted again with what the manifest lacks - the working directory
-      # and the other passthrough keys pkg load drops, a disk with room, uname Linux, and the program
-      # under its real name - to tell which of these the failure needs.
+      # and the other passthrough keys pkg load drops, a disk with room, uname Linux, the program
+      # under its real name, a host name the machine can resolve - to tell which of these the
+      # failure needs.
       - name: Boot with the manifest completed
         if: failure()
         run: |
-          p="$HOME/.ops/local_packages/amd64/t-$NAME"; m="$p/package.manifest"
+          p="$HOME/.ops/local_packages/amd64/t-$NAME"; m="$p/package.manifest"; s="$p/sysroot"
           [ -f "$m" ] || { echo "no package"; exit 0; }
-          mb=$(du -sm "$p/sysroot" | cut -f1)
+          mb=$(du -sm "$s" | cut -f1)
           prog=$(jq -r .Program "$m")
           real=$(docker run --rm --entrypoint readlink "jc-$NAME:latest" -f "$prog" 2>/dev/null || true)
-          echo "program $prog real ${real:-?} in sysroot: $([ -f "$p/sysroot$real" ] && echo yes || echo no)"
-          if [ -n "$real" ] && [ "$real" != "$prog" ] && [ -f "$p/sysroot$real" ]; then
+          if [ -n "$real" ] && [ "$real" != "$prog" ] && [ -f "$s$real" ]; then
             cp "$m" "$m.orig"; jq --arg r "$real" '.Program = $r' "$m.orig" > "$m"
           fi
-          jq -c --arg sz "$((mb + mb / 4 + 256))m" '{BaseVolumeSz: $sz, ManifestPassthrough: ((.ManifestPassthrough // {}) + {uname: {sysname: "Linux"}})}' "$m" > cfg.json
+          jq -c --arg sz "$((mb * 2 + 256))m" '{BaseVolumeSz: $sz, ManifestPassthrough: ((.ManifestPassthrough // {}) + {uname: {sysname: "Linux"}})}' "$m" > cfg.json
           cat cfg.json; echo
-          if [ "$NAME" = glassfish ]; then
-            d="$p/sysroot/opt/gfinstall/glassfish"
-            echo "domain1: $(ls "$d/domains/domain1" 2>&1 | tr '\n' ' ')"
-            echo "config: $(ls "$d/domains/domain1/config" 2>&1 | tr '\n' ' ' | cut -c1-400)"
-            echo "osgi-cache files: $(find "$d/domains/domain1/osgi-cache" -type f 2>/dev/null | wc -l)"
-            docker run --rm --entrypoint sh "jc-$NAME:latest" -c 'cd /opt/gfinstall/glassfish && find modules -name "*.jar" | sort' > img.jars
-            (cd "$d" && find modules -name '*.jar' | sort) > pkg.jars
-            echo "jars in modules: image $(wc -l < img.jars), package $(wc -l < pkg.jars)"
-            echo "missing jars:"; comm -23 img.jars pkg.jars | head -40
+          boot() {
+            ./ops pkg load -l "t-$NAME" --accel=false -c cfg.json ${PORT:+-p "$PORT"} > "$1" 2>&1 &
+            ok=0
+            for i in $(seq 1 "$WAIT"); do
+              if [ -n "$PORT" ]; then
+                curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null | grep -q -- "$MATCH" && { ok=1; break; }
+                sleep 2
+              else
+                sleep 2
+                grep -q -- "$MATCH" "$1" && { ok=1; break; }
+              fi
+              if ! pgrep -f qemu-system > /dev/null && [ "$i" -gt 30 ]; then echo "the machine stopped after $i turns"; break; fi
+            done
+            pkill -f qemu-system || true
+            sleep 3
+            if [ $ok = 1 ]; then echo "COMPLETED BOOT PASS $NAME ($1) after $i turns"; return 0; fi
+            echo "COMPLETED BOOT FAIL $NAME ($1)"
+            tr '\r' '\n' < "$1" | grep -vE '^ *[0-9]+% \||^ *$|^warning: |points at nothing|is left out:|^\s+at |^ +[0-9a-f]{16}:|^ +r[0-9a-z]+: ' | cut -c1-300 | awk '!s[$0]++' | grep -E -m 25 -i 'error|exception|fatal|SIG|problematic|# [JVC] |caused|unknown|fail' || true
+            return 1
+          }
+          # a name for the machine that it can resolve, as a container runtime gives a container
+          echo "t-$NAME" > "$s/etc/hostname"
+          echo "hosts carried: $(tr '\n' '|' < "$s/etc/hosts" 2>/dev/null | cut -c1-200)"
+          printf '127.0.0.1\tlocalhost t-%s\n::1\tlocalhost ip6-localhost ip6-loopback\n' "$NAME" > "$s/etc/hosts"
+          boot boot3.log && exit 0
+          boot boot4.log && exit 0
+          if [ "$NAME" = rocketmq ]; then
+            echo "ext in package: $(ls "$s/opt/java/openjdk/jre/lib/ext" 2>&1 | tr '\n' ' ')"
+            docker run --rm --entrypoint sh "jc-$NAME:latest" -c 'ls /opt/java/openjdk/jre/lib/ext | tr "\n" " "; echo; ls /home/rocketmq/rocketmq-5.3.2/lib | wc -l' 
+            echo "rocketmq lib in package: $(ls "$s/home/rocketmq/rocketmq-5.3.2/lib" | wc -l)"
+            docker create --name whole "jc-$NAME:latest" > /dev/null
+            sudo docker cp -L whole:/opt/java/openjdk/jre/lib/ext/. "$s/opt/java/openjdk/jre/lib/ext/"
+            sudo docker cp -L whole:/home/rocketmq/rocketmq-5.3.2/lib/. "$s/home/rocketmq/rocketmq-5.3.2/lib/"
+            sudo chown -R "$(id -u)" "$s"
+            echo "with the two directories whole:"
+            boot boot5.log && exit 0
+            sudo docker cp -L whole:/opt/java/openjdk/. "$s/opt/java/openjdk/"
+            sudo chown -R "$(id -u)" "$s"
+            echo "with the whole jdk:"
+            boot boot6.log && exit 0
           fi
-          ./ops pkg load -l "t-$NAME" --accel=false -c cfg.json ${PORT:+-p "$PORT"} > boot3.log 2>&1 &
-          ok=0
-          for i in $(seq 1 "$WAIT"); do
-            if [ -n "$PORT" ]; then
-              curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null | grep -q -- "$MATCH" && { ok=1; break; }
-              sleep 2
-            else
-              sleep 2
-              grep -q -- "$MATCH" boot3.log && { ok=1; break; }
-            fi
-            if ! pgrep -f qemu-system > /dev/null && [ "$i" -gt 30 ]; then echo "the machine stopped after $i turns"; break; fi
-          done
-          pkill -f qemu-system || true
-          sleep 2
-          clean() { tr '\r' '\n' < boot3.log | grep -vE '^ *[0-9]+% \||^ *$|^warning: |points at nothing|is left out:|^\s+at ' | cut -c1-300; }
-          if [ $ok = 1 ]; then echo "COMPLETED BOOT PASS $NAME after $i turns"; exit 0; fi
-          echo "COMPLETED BOOT FAIL $NAME"
-          echo "--- first ---"; clean | head -40 || true
-          echo "--- last ---"; clean | tail -40 || true
+          exit 1
