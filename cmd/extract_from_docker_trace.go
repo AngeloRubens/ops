@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"debug/elf"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,6 +23,7 @@ import (
 	dockerContainer "github.com/docker/docker/api/types/container"
 	dockerImage "github.com/docker/docker/api/types/image"
 	dockerClient "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	api "github.com/nanovms/ops/lepton"
 	"github.com/nanovms/ops/types"
 )
@@ -150,7 +154,7 @@ for lib in $(ldd /usr/bin/strace | awk '/=>/ {print $3}'); do cp -Ln "$lib" /out
 func (t *tracer) wrap(argv []string) []string {
 	wrapped := []string{
 		traceMount + "/" + t.loader, "--library-path", traceMount, traceMount + "/strace",
-		"-f", "-qq", "-s", "4096", "-e", "trace=file", "-e", "signal=none",
+		"-f", "-q", "-s", "4096", "-e", "trace=file", "-e", "signal=none",
 		"-o", traceMount + "/files", "--",
 	}
 	return append(wrapped, argv...)
@@ -220,11 +224,16 @@ func resultOf(after string) (string, bool) {
 // its end written on another line - is taken, since a file looked for is a file that may be needed.
 // A path that is not absolute is read against workingDir when it was relative to the working
 // directory, and left out when it was relative to a file descriptor that is not known here.
-func touchedPaths(trace []byte, workingDir string) (paths []string, executed []string) {
+// What happened before line from is not read: a launcher script runs tools before it hands over to
+// the program, and a unikernel runs no script, so what they opened is not what the program needs.
+func touchedPaths(trace []byte, workingDir string, from int) (paths []string, executed []string) {
 	seen := map[string]bool{}
 	ran := map[string]bool{}
 
-	for _, line := range strings.Split(string(trace), "\n") {
+	for i, line := range strings.Split(string(trace), "\n") {
+		if i < from {
+			continue
+		}
 		call := traceCall.FindStringSubmatch(line)
 		if call == nil {
 			continue
@@ -276,10 +285,38 @@ func notCarried(p string) bool {
 	return false
 }
 
-// copyTouched copies the files that were opened out of the container into sysroot. A symbolic link
-// is made as a link and its target is carried too, since the program reached the target through it.
+// copyHostFile puts a copy of a file that is in the sysroot under another name.
+func copyHostFile(sysroot string, from string, to string) {
+	source := filepath.Join(sysroot, from)
+	destination := filepath.Join(sysroot, to)
+	if _, err := os.Lstat(destination); err == nil {
+		return
+	}
+	info, err := os.Stat(source)
+	if err != nil || os.MkdirAll(path.Dir(destination), 0755) != nil {
+		return
+	}
+	in, err := os.Open(source)
+	if err != nil {
+		return
+	}
+	defer in.Close()
+	out, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY, info.Mode()|0600)
+	if err != nil {
+		return
+	}
+	io.Copy(out, in)
+	out.Close()
+}
+
+// copyTouched copies the files that were opened out of the container into sysroot. A package does
+// not carry a symbolic link: an absolute one names a path of the machine that builds the image, not
+// of the image. What a link leads to is carried instead, under the name of the link and under its
+// own.
 func copyTouched(ctx context.Context, cli *dockerClient.Client, containerID string, sysroot string, paths []string, verbose bool) {
 	done := map[string]bool{}
+	// the names a path was reached by, through links
+	aliases := map[string][]string{}
 	queue := append([]string{}, paths...)
 
 	for len(queue) > 0 {
@@ -313,13 +350,20 @@ func copyTouched(ctx context.Context, cli *dockerClient.Client, containerID stri
 			if link == "" {
 				link = stat.LinkTarget
 			}
-			if os.MkdirAll(path.Dir(target), 0755) == nil {
-				os.Symlink(link, target)
-			}
 			if !strings.HasPrefix(link, "/") {
 				link = path.Join(path.Dir(p), link)
 			}
-			queue = append(queue, link)
+			link = path.Clean(link)
+			names := append([]string{p}, aliases[p]...)
+			aliases[link] = append(aliases[link], names...)
+			if done[link] {
+				// it was carried already, under its own name
+				for _, name := range names {
+					copyHostFile(sysroot, link, name)
+				}
+			} else {
+				queue = append(queue, link)
+			}
 		case header.Typeflag == tar.TypeDir:
 			os.MkdirAll(target, 0755)
 		case header.Typeflag == tar.TypeReg:
@@ -332,6 +376,9 @@ func copyTouched(ctx context.Context, cli *dockerClient.Client, containerID stri
 			}
 			io.Copy(out, tr)
 			out.Close()
+			for _, name := range aliases[p] {
+				copyHostFile(sysroot, p, name)
+			}
 		}
 		reader.Close()
 	}
@@ -414,16 +461,23 @@ func carryInterpreters(ctx context.Context, cli *dockerClient.Client, containerI
 
 // imageProgram is what an image starts when it is not told otherwise, and the directory and
 // environment it starts it in.
-func imageProgram(ctx context.Context, cli *dockerClient.Client, image string) (argv []string, workingDir string, env []string, err error) {
+func imageProgram(ctx context.Context, cli *dockerClient.Client, image string) (argv []string, workingDir string, env []string, exposed []int, err error) {
 	inspected, err := cli.ImageInspect(ctx, image)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, nil, err
 	}
 	config := inspected.Config
 	if config == nil {
-		return nil, "", nil, fmt.Errorf("%s has no configuration", image)
+		return nil, "", nil, nil, fmt.Errorf("%s has no configuration", image)
 	}
-	return append(append([]string{}, config.Entrypoint...), config.Cmd...), config.WorkingDir, config.Env, nil
+	for port := range config.ExposedPorts {
+		number, protocol, _ := strings.Cut(string(port), "/")
+		if n, err := strconv.Atoi(number); err == nil && (protocol == "" || protocol == "tcp") {
+			exposed = append(exposed, n)
+		}
+	}
+	sort.Ints(exposed)
+	return append(append([]string{}, config.Entrypoint...), config.Cmd...), config.WorkingDir, config.Env, exposed, nil
 }
 
 // whereIs finds a program the way a shell would, among the files already carried.
@@ -446,8 +500,158 @@ func whereIs(sysroot string, program string, env []string) string {
 	return program
 }
 
+// execIn runs a command in the container, as root, and brings back what it prints.
+func execIn(ctx context.Context, cli *dockerClient.Client, containerID string, cmd []string) ([]byte, error) {
+	created, err := cli.ContainerExecCreate(ctx, containerID, dockerContainer.ExecOptions{
+		User:         "root",
+		Cmd:          cmd,
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	attached, err := cli.ContainerExecAttach(ctx, created.ID, dockerContainer.ExecAttachOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer attached.Close()
+
+	out := &bytes.Buffer{}
+	if _, err := stdcopy.StdCopy(out, io.Discard, attached.Reader); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+// listening are the tcp ports the container has a server on.
+func listening(ctx context.Context, cli *dockerClient.Client, containerID string) []int {
+	var ports []int
+	for _, table := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+		raw, err := execIn(ctx, cli, containerID, []string{"cat", table})
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			fields := strings.Fields(line)
+			// the fourth column is the state, and 0A is listening
+			if len(fields) < 4 || fields[3] != "0A" {
+				continue
+			}
+			if _, hex, found := strings.Cut(fields[1], ":"); found {
+				if n, err := strconv.ParseUint(hex, 16, 32); err == nil {
+					ports = append(ports, int(n))
+				}
+			}
+		}
+	}
+	return ports
+}
+
+// watch lets the program run for up to seconds. A server opens some of what it needs only when it
+// answers, so every port it listens on, or the image says it does, is asked for its front page, and
+// the time is cut short once they have been asked and nothing new has shown up.
+func watch(ctx context.Context, cli *dockerClient.Client, containerID string, exposed []int, seconds int, verbose bool) {
+	deadline := time.Now().Add(time.Duration(seconds) * time.Second)
+	asked := map[int]bool{}
+	var settled time.Time
+
+	for time.Now().Before(deadline) {
+		info, err := cli.ContainerInspect(ctx, containerID)
+		if err != nil || !info.State.Running {
+			return
+		}
+
+		fresh := false
+		for _, port := range append(listening(ctx, cli, containerID), exposed...) {
+			if asked[port] {
+				continue
+			}
+			address := net.JoinHostPort(info.NetworkSettings.IPAddress, strconv.Itoa(port))
+			conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+			if err != nil {
+				continue
+			}
+			conn.Close()
+			asked[port] = true
+			fresh = true
+			if verbose {
+				fmt.Printf("asking %s for /\n", address)
+			}
+			client := http.Client{Timeout: 5 * time.Second}
+			if response, err := client.Get("http://" + address + "/"); err == nil {
+				io.Copy(io.Discard, response.Body)
+				response.Body.Close()
+			}
+		}
+		if fresh {
+			settled = time.Now().Add(5 * time.Second)
+		}
+		if len(asked) > 0 && time.Now().After(settled) {
+			return
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+var execveLine = regexp.MustCompile(`^(?:\[pid +(\d+)\] +|(\d+) +)execve\("((?:[^"\\]|\\.)*)", .*\) = 0 *$`)
+var exitedLine = regexp.MustCompile(`^(?:\[pid +(\d+)\] +|(\d+) +)\+\+\+ (?:exited|killed)`)
+
+// finalProgram is the program the image ends up running: the last one started that is still running
+// when the trace ends, or the last one started when none is. An entrypoint script starts tools, and
+// then the program, and the program is what a unikernel runs. It gives the process, the path the
+// program was started by and the line of the trace where it was.
+func finalProgram(trace []byte) (pid string, program string, line int, found bool) {
+	type started struct {
+		program string
+		line    int
+	}
+	last := map[string]started{}
+	gone := map[string]bool{}
+
+	for i, text := range strings.Split(string(trace), "\n") {
+		if m := execveLine.FindStringSubmatch(text); m != nil {
+			name := m[3]
+			if unquoted, err := strconv.Unquote("\"" + name + "\""); err == nil {
+				name = unquoted
+			}
+			last[m[1]+m[2]] = started{program: name, line: i}
+			delete(gone, m[1]+m[2])
+		} else if m := exitedLine.FindStringSubmatch(text); m != nil {
+			gone[m[1]+m[2]] = true
+		}
+	}
+
+	best, alive := -1, false
+	for process, s := range last {
+		running := !gone[process]
+		if (running && !alive) || (running == alive && s.line > best) {
+			pid, program, best, alive = process, s.program, s.line, running
+		}
+	}
+
+	return pid, program, best, best >= 0
+}
+
+// splitNul reads what /proc keeps as strings ended by a zero byte.
+func splitNul(raw []byte) []string {
+	var parts []string
+	for _, part := range strings.Split(string(raw), "\x00") {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return parts
+}
+
+// belongsToTheContainer are the variables a container is given by the runtime or its shell, which
+// the program of an image does not ask for.
+var belongsToTheContainer = []string{"HOSTNAME", "SHLVL", "OLDPWD", "_"}
+
 // ExtractFromDockerImageByTrace creates a package from a docker image by running it and carrying the
-// files it opens. The program is the one the image starts, or targetExecutable followed by args.
+// files its program reaches. The image is run the way it starts, and the program is the one that is
+// left running at the end of it, unless targetExecutable is given: that followed by args is run
+// instead.
 func ExtractFromDockerImageByTrace(imageName string, packageName string, parch string, targetExecutable string, quiet bool, verbose bool, seconds int, args []string) (string, string) {
 	var version string
 	if packageName == "" {
@@ -480,7 +684,7 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		pulled.Close()
 	}
 
-	argv, workingDir, env, err := imageProgram(ctx, cli, imageName)
+	argv, workingDir, env, exposed, err := imageProgram(ctx, cli, imageName)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -517,19 +721,44 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		log.Fatal(err)
 	}
 
-	// a server goes on running, a program that prints and stops does not: either way what it opened
-	// in this time is what it needs
-	waited, errs := cli.ContainerWait(ctx, created.ID, dockerContainer.WaitConditionNotRunning)
-	select {
-	case <-waited:
-	case <-errs:
-	case <-time.After(time.Duration(seconds) * time.Second):
-	}
+	watch(ctx, cli, created.ID, exposed, seconds, verbose)
+
 	// the list is written as the program goes, so what it has opened so far is in it
-	touched, executed := touchedPaths(tr.trace(), workingDir)
-	if len(touched) == 0 {
-		log.Fatalf("%s opened nothing in %d seconds", imageName, seconds)
+	trace := tr.trace()
+	pid, program, from, found := finalProgram(trace)
+	if !found {
+		log.Fatalf("%s started no program in %d seconds", imageName, seconds)
 	}
+	if verbose {
+		fmt.Printf("the program is %s, process %s\n", program, pid)
+	}
+
+	// what the process says about itself, while it is there to ask: the command line it was given
+	// by the script that started it, the variables it was given, and where it is
+	runningEnv := map[string]string{}
+	cwd := ""
+	if info, err := cli.ContainerInspect(ctx, created.ID); err == nil && info.State.Running {
+		base := "/proc/" + pid + "/"
+		if raw, err := execIn(ctx, cli, created.ID, []string{"cat", base + "cmdline"}); err == nil && len(raw) > 0 {
+			argv = splitNul(raw)
+		}
+		if raw, err := execIn(ctx, cli, created.ID, []string{"cat", base + "environ"}); err == nil && len(raw) > 0 {
+			env = splitNul(raw)
+		}
+		if raw, err := execIn(ctx, cli, created.ID, []string{"readlink", base + "cwd"}); err == nil {
+			cwd = strings.TrimSpace(string(raw))
+		}
+	}
+	if cwd == "" {
+		cwd = workingDir
+	}
+	for _, e := range env {
+		if name, value, ok := strings.Cut(e, "="); ok && !contains(belongsToTheContainer, name) {
+			runningEnv[name] = value
+		}
+	}
+
+	touched, executed := touchedPaths(trace, cwd, from)
 	if verbose {
 		fmt.Printf("the program opened %d files\n", len(touched))
 	}
@@ -546,25 +775,22 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 	copyTouched(ctx, cli, created.ID, sysroot, touched, verbose)
 	carryInterpreters(ctx, cli, created.ID, sysroot, executed, verbose)
 
-	program := whereIs(sysroot, argv[0], env)
+	if !strings.HasPrefix(program, "/") {
+		program = whereIs(sysroot, program, env)
+	}
 	if _, err := os.Stat(filepath.Join(sysroot, program)); err != nil {
-		log.Fatalf("%s did not open %s: say it with --file", imageName, argv[0])
+		log.Fatalf("%s did not open %s: say it with --file", imageName, program)
 	}
 
 	c := &types.Config{
 		Program: program,
 		Args:    append([]string{program}, argv[1:]...),
 		Version: version,
+		Env:     runningEnv,
 	}
-	// the program was watched with the environment of the image, so it is run with it
-	c.Env = map[string]string{}
-	for _, e := range env {
-		if name, value, found := strings.Cut(e, "="); found {
-			c.Env[name] = value
-		}
-	}
-	if workingDir != "" && workingDir != "/" {
-		c.Env["PWD"] = workingDir
+	if cwd != "" && cwd != "/" {
+		c.Env["PWD"] = cwd
+		c.ManifestPassthrough = map[string]any{"cwd": cwd}
 	}
 
 	manifest, _ := json.MarshalIndent(c, "", "  ")
@@ -575,4 +801,13 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 	packageDirectory := MovePackageFiles(tempDirectory, path.Join(api.LocalPackagesRoot, parch, packageName))
 
 	return packageName, packageDirectory
+}
+
+func contains(list []string, item string) bool {
+	for _, entry := range list {
+		if entry == item {
+			return true
+		}
+	}
+	return false
 }
