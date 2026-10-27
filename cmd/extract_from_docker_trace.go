@@ -3,6 +3,7 @@ package cmd
 import (
 	"archive/tar"
 	"context"
+	"debug/elf"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -263,7 +264,9 @@ func notCarried(p string) bool {
 
 // copyTouched copies the files that were opened out of the container into sysroot. A symbolic link
 // is made as a link and its target is carried too, since the program reached the target through it.
-func copyTouched(ctx context.Context, cli *dockerClient.Client, containerID string, sysroot string, paths []string, verbose bool) {
+// It returns the regular files that were copied.
+func copyTouched(ctx context.Context, cli *dockerClient.Client, containerID string, sysroot string, paths []string, verbose bool) []string {
+	var copied []string
 	done := map[string]bool{}
 	queue := append([]string{}, paths...)
 
@@ -317,9 +320,37 @@ func copyTouched(ctx context.Context, cli *dockerClient.Client, containerID stri
 			}
 			io.Copy(out, tr)
 			out.Close()
+			copied = append(copied, p)
 		}
 		reader.Close()
 	}
+
+	return copied
+}
+
+// interpreters are the dynamic loaders the programs that were carried ask the kernel for. The
+// kernel loads one itself when it starts the program, so it is never among the files the program
+// opened.
+func interpreters(sysroot string, paths []string) []string {
+	var found []string
+	seen := map[string]bool{}
+	for _, p := range paths {
+		f, err := elf.Open(filepath.Join(sysroot, p))
+		if err != nil {
+			continue
+		}
+		section := f.Section(".interp")
+		if section != nil {
+			if raw, err := section.Data(); err == nil {
+				if interp := strings.TrimRight(string(raw), "\x00"); interp != "" && !seen[interp] {
+					seen[interp] = true
+					found = append(found, interp)
+				}
+			}
+		}
+		f.Close()
+	}
+	return found
 }
 
 // imageProgram is what an image starts when it is not told otherwise, and the directory and
@@ -453,7 +484,8 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		log.Fatal(err)
 	}
 
-	copyTouched(ctx, cli, created.ID, sysroot, touched, verbose)
+	copied := copyTouched(ctx, cli, created.ID, sysroot, touched, verbose)
+	copyTouched(ctx, cli, created.ID, sysroot, interpreters(sysroot, copied), verbose)
 
 	program := whereIs(sysroot, argv[0], env)
 	if _, err := os.Stat(filepath.Join(sysroot, program)); err != nil {
