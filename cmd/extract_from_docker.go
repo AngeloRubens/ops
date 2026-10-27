@@ -464,12 +464,17 @@ func copyFromContainer(cli *dockerClient.Client, containerID string, containerPa
 }
 
 func copyWholeContainer(cli *dockerClient.Client, containerID string, hostBaseDir string) error {
+	return copyDirFromContainer(cli, containerID, "/", hostBaseDir)
+}
+
+// copyDirFromContainer copies a directory of the container, and what is under it, into hostBaseDir
+func copyDirFromContainer(cli *dockerClient.Client, containerID string, containerPath string, hostBaseDir string) error {
 	err := os.MkdirAll(path.Dir(hostBaseDir), 0764)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fileReader, _, err := cli.CopyFromContainer(context.Background(), containerID, "/")
+	fileReader, _, err := cli.CopyFromContainer(context.Background(), containerID, containerPath)
 	if err != nil {
 		return err
 	}
