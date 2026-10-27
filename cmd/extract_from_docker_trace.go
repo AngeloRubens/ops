@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"debug/elf"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -548,42 +550,102 @@ func listening(ctx context.Context, cli *dockerClient.Client, containerID string
 	return ports
 }
 
+// exerciseURL is the address a request is made to: raw taken against the container at host. A path
+// is taken against port, and a url must name the container with the host "container" and may say
+// its own port.
+func exerciseURL(raw string, host string, port int) (string, error) {
+	if strings.HasPrefix(raw, "/") {
+		return "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + raw, nil
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("%q is neither a path nor a url", raw)
+	}
+	if u.Hostname() != "container" {
+		return "", fmt.Errorf("%q does not name the container: use the host \"container\" or a path", raw)
+	}
+	number := strconv.Itoa(port)
+	if u.Port() != "" {
+		number = u.Port()
+	}
+	u.Host = net.JoinHostPort(host, number)
+
+	return u.String(), nil
+}
+
 // watch lets the program run for up to seconds. A server opens some of what it needs only when it
 // answers, so every port it listens on, or the image says it does, is asked for its front page, and
-// the time is cut short once they have been asked and nothing new has shown up.
-func watch(ctx context.Context, cli *dockerClient.Client, containerID string, exposed []int, seconds int, verbose bool) {
+// the time is cut short once they have been asked and nothing new has shown up. The person who
+// knows what the program is for can have it asked for more, to make it open what it opens only
+// then: the certificate on the first secure connection, the template on the first page.
+func watch(ctx context.Context, cli *dockerClient.Client, containerID string, exposed []int, exercise []string, seconds int, verbose bool) {
 	deadline := time.Now().Add(time.Duration(seconds) * time.Second)
 	asked := map[int]bool{}
+	var order []int
 	var settled time.Time
+	exercised := false
+	// the container is the one asked, and it is the one that is being looked at
+	client := http.Client{
+		Timeout:   15 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+	}
 
 	for time.Now().Before(deadline) {
 		info, err := cli.ContainerInspect(ctx, containerID)
 		if err != nil || !info.State.Running {
 			return
 		}
+		host := info.NetworkSettings.IPAddress
 
 		fresh := false
 		for _, port := range append(listening(ctx, cli, containerID), exposed...) {
 			if asked[port] {
 				continue
 			}
-			address := net.JoinHostPort(info.NetworkSettings.IPAddress, strconv.Itoa(port))
+			address := net.JoinHostPort(host, strconv.Itoa(port))
 			conn, err := net.DialTimeout("tcp", address, 2*time.Second)
 			if err != nil {
 				continue
 			}
 			conn.Close()
 			asked[port] = true
+			order = append(order, port)
 			fresh = true
 			if verbose {
 				fmt.Printf("asking %s for /\n", address)
 			}
-			client := http.Client{Timeout: 5 * time.Second}
 			if response, err := client.Get("http://" + address + "/"); err == nil {
 				io.Copy(io.Discard, response.Body)
 				response.Body.Close()
 			}
 		}
+
+		if len(order) > 0 && !exercised {
+			exercised = true
+			fresh = true
+			for _, raw := range exercise {
+				address, err := exerciseURL(raw, host, order[0])
+				if err != nil {
+					fmt.Printf("warning: %v\n", err)
+					continue
+				}
+				response, err := client.Get(address)
+				if err != nil {
+					fmt.Printf("warning: asking for %s: %v\n", raw, err)
+					continue
+				}
+				io.Copy(io.Discard, response.Body)
+				response.Body.Close()
+				if verbose {
+					fmt.Printf("asked for %s: %s\n", raw, response.Status)
+				}
+			}
+		}
+
 		if fresh {
 			settled = time.Now().Add(5 * time.Second)
 		}
@@ -652,7 +714,7 @@ var belongsToTheContainer = []string{"HOSTNAME", "SHLVL", "OLDPWD", "_"}
 // files its program reaches. The image is run the way it starts, and the program is the one that is
 // left running at the end of it, unless targetExecutable is given: that followed by args is run
 // instead.
-func ExtractFromDockerImageByTrace(imageName string, packageName string, parch string, targetExecutable string, quiet bool, verbose bool, seconds int, args []string) (string, string) {
+func ExtractFromDockerImageByTrace(imageName string, packageName string, parch string, targetExecutable string, quiet bool, verbose bool, seconds int, exercise []string, args []string) (string, string) {
 	var version string
 	if packageName == "" {
 		name, tag, err := ImageNameToPackageNameAndVersion(imageName)
@@ -721,7 +783,7 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		log.Fatal(err)
 	}
 
-	watch(ctx, cli, created.ID, exposed, seconds, verbose)
+	watch(ctx, cli, created.ID, exposed, exercise, seconds, verbose)
 
 	// the list is written as the program goes, so what it has opened so far is in it
 	trace := tr.trace()
