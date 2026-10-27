@@ -134,7 +134,8 @@ jobs:
           docker rm -f app > /dev/null
           file="${argv[0]}"
           case "$file" in */*) ;; *) file="$exe" ;; esac
-          { printf '%s\0' --file "$file"; for a in "${argv[@]:1}"; do printf '%s\0' -a "$a"; done; } > flags.bin
+          # the tool finds the program itself: the image is run the way it starts
+          : > flags.bin
           printf '%s ' "${argv[@]}" | cut -c1-1500; echo
       - name: Build the package
         run: |
