@@ -103,40 +103,16 @@ for lib in $(ldd /usr/bin/strace | awk '/=>/ {print $3}'); do cp -Ln "$lib" /out
 		return nil, err
 	}
 
-	reader, _, err := cli.CopyFromContainer(ctx, created.ID, "/out/.")
-	if err != nil {
+	// strace and what it is linked against, in the directory out under dir
+	if err := copyDirFromContainer(cli, created.ID, "/out", dir); err != nil {
 		return nil, err
 	}
-	defer reader.Close()
 
-	tr := tar.NewReader(reader)
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if header.Typeflag != tar.TypeReg {
-			continue
-		}
-		out, err := os.OpenFile(filepath.Join(dir, path.Base(header.Name)), os.O_CREATE|os.O_WRONLY, 0755)
-		if err != nil {
-			return nil, err
-		}
-		_, err = io.Copy(out, tr)
-		out.Close()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	loaders, _ := filepath.Glob(filepath.Join(dir, "ld-musl-*.so.1"))
+	loaders, _ := filepath.Glob(filepath.Join(dir, "out", "ld-musl-*.so.1"))
 	if len(loaders) == 0 {
 		return nil, fmt.Errorf("no musl loader came with strace")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "strace")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "out", "strace")); err != nil {
 		return nil, fmt.Errorf("strace did not come out of %s", stracePackager)
 	}
 
@@ -153,7 +129,7 @@ for lib in $(ldd /usr/bin/strace | awk '/=>/ {print $3}'); do cp -Ln "$lib" /out
 // program makes and writes down the calls that name a file.
 func (t *tracer) wrap(argv []string) []string {
 	wrapped := []string{
-		traceMount + "/" + t.loader, "--library-path", traceMount, traceMount + "/strace",
+		traceMount + "/out/" + t.loader, "--library-path", traceMount + "/out", traceMount + "/out/strace",
 		"-f", "-q", "-s", "4096", "-e", "trace=file", "-e", "signal=none",
 		"-o", traceMount + "/files", "--",
 	}
