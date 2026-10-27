@@ -461,14 +461,14 @@ func carryInterpreters(ctx context.Context, cli *dockerClient.Client, containerI
 
 // imageProgram is what an image starts when it is not told otherwise, and the directory and
 // environment it starts it in.
-func imageProgram(ctx context.Context, cli *dockerClient.Client, image string) (argv []string, workingDir string, env []string, exposed []int, err error) {
+func imageProgram(ctx context.Context, cli *dockerClient.Client, image string) (argv []string, workingDir string, env []string, exposed []int, system string, err error) {
 	inspected, err := cli.ImageInspect(ctx, image)
 	if err != nil {
-		return nil, "", nil, nil, err
+		return nil, "", nil, nil, "", err
 	}
 	config := inspected.Config
 	if config == nil {
-		return nil, "", nil, nil, fmt.Errorf("%s has no configuration", image)
+		return nil, "", nil, nil, "", fmt.Errorf("%s has no configuration", image)
 	}
 	for port := range config.ExposedPorts {
 		number, protocol, _ := strings.Cut(string(port), "/")
@@ -477,7 +477,7 @@ func imageProgram(ctx context.Context, cli *dockerClient.Client, image string) (
 		}
 	}
 	sort.Ints(exposed)
-	return append(append([]string{}, config.Entrypoint...), config.Cmd...), config.WorkingDir, config.Env, exposed, nil
+	return append(append([]string{}, config.Entrypoint...), config.Cmd...), config.WorkingDir, config.Env, exposed, inspected.Os, nil
 }
 
 // whereIs finds a program the way a shell would, among the files already carried.
@@ -580,12 +580,16 @@ func exerciseURL(raw string, host string, port int) (string, error) {
 // the time is cut short once they have been asked and nothing new has shown up. The person who
 // knows what the program is for can have it asked for more, to make it open what it opens only
 // then: the certificate on the first secure connection, the template on the first page.
-func watch(ctx context.Context, cli *dockerClient.Client, containerID string, exposed []int, exercise []string, seconds int, verbose bool) {
+func watch(ctx context.Context, cli *dockerClient.Client, containerID string, tr *tracer, exposed []int, exercise []string, seconds int, verbose bool) {
 	deadline := time.Now().Add(time.Duration(seconds) * time.Second)
 	asked := map[int]bool{}
 	var order []int
 	var settled time.Time
 	exercised := false
+	// a program that is still starting goes on writing what it opens, and the time to stop is when
+	// it has not for a while
+	var size int64 = -1
+	grew := time.Now()
 	// the container is the one asked, and it is the one that is being looked at
 	client := http.Client{
 		Timeout:   15 * time.Second,
@@ -647,7 +651,11 @@ func watch(ctx context.Context, cli *dockerClient.Client, containerID string, ex
 		if fresh {
 			settled = time.Now().Add(5 * time.Second)
 		}
-		if len(asked) > 0 && time.Now().After(settled) {
+		if stat, err := os.Stat(filepath.Join(tr.dir, "files")); err == nil && stat.Size() != size {
+			size = stat.Size()
+			grew = time.Now()
+		}
+		if len(asked) > 0 && time.Now().After(settled) && time.Since(grew) > 10*time.Second {
 			return
 		}
 		time.Sleep(2 * time.Second)
@@ -732,9 +740,12 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		log.Fatal(err)
 	}
 
-	argv, workingDir, env, exposed, err := imageProgram(ctx, cli, imageName)
+	argv, workingDir, env, exposed, system, err := imageProgram(ctx, cli, imageName)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if system != "" && system != "linux" {
+		log.Fatalf("%s is an image for %s, and a unikernel here runs what was made for linux", imageName, system)
 	}
 	if targetExecutable != "" {
 		argv = append([]string{targetExecutable}, args...)
@@ -769,7 +780,7 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		log.Fatal(err)
 	}
 
-	watch(ctx, cli, created.ID, exposed, exercise, seconds, verbose)
+	watch(ctx, cli, created.ID, tr, exposed, exercise, seconds, verbose)
 
 	// the list is written as the program goes, so what it has opened so far is in it
 	trace := tr.trace()
@@ -785,6 +796,7 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 	// by the script that started it, the variables it was given, and where it is
 	runningEnv := map[string]string{}
 	cwd := ""
+	exe := ""
 	if info, err := cli.ContainerInspect(ctx, created.ID); err == nil && info.State.Running {
 		base := "/proc/" + pid + "/"
 		if raw, err := execIn(ctx, cli, created.ID, []string{"cat", base + "cmdline"}); err == nil && len(raw) > 0 {
@@ -795,6 +807,9 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		}
 		if raw, err := execIn(ctx, cli, created.ID, []string{"readlink", base + "cwd"}); err == nil {
 			cwd = strings.TrimSpace(string(raw))
+		}
+		if raw, err := execIn(ctx, cli, created.ID, []string{"readlink", base + "exe"}); err == nil {
+			exe = strings.TrimSpace(string(raw))
 		}
 	}
 	if cwd == "" {
@@ -826,20 +841,62 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 	if !strings.HasPrefix(program, "/") {
 		program = whereIs(sysroot, program, env)
 	}
+	// the file the program was started through can be a link, and a program finds its libraries
+	// beside the file it really is
+	if exe != "" && exe != program {
+		if _, err := os.Stat(filepath.Join(sysroot, exe)); err == nil {
+			program = exe
+		}
+	}
 	if _, err := os.Stat(filepath.Join(sysroot, program)); err != nil {
 		log.Fatalf("%s did not open %s: say it with --file", imageName, program)
 	}
 
+	// the machine has a name of its own, and a program that asks for its address by that name must
+	// be able to find it
+	writeIdentity(sysroot, packageName)
+
 	c := &types.Config{
-		Program: program,
-		Args:    append([]string{program}, argv[1:]...),
-		Version: version,
-		Env:     runningEnv,
+		Program:      program,
+		Args:         append([]string{program}, argv[1:]...),
+		Version:      version,
+		Env:          runningEnv,
+		BaseVolumeSz: volumeSize(sysroot),
 	}
+	// an image is made for linux, and a program may check that that is where it runs: java 8
+	// stops with "Platform not recognized" when uname says Nanos
+	c.ManifestPassthrough = map[string]any{"uname": map[string]any{"sysname": "Linux"}}
 	if cwd != "" && cwd != "/" {
 		c.Env["PWD"] = cwd
-		c.ManifestPassthrough = map[string]any{"cwd": cwd}
+		c.ManifestPassthrough["cwd"] = cwd
 	}
 
 	return writePackage(tempDirectory, packageName, parch, c)
+}
+
+// volumeSize is how much room the machine is given for the files it carries and the ones it writes.
+func volumeSize(sysroot string) string {
+	var total int64
+
+	filepath.Walk(sysroot, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+
+	megabytes := total / (1024 * 1024)
+
+	return fmt.Sprintf("%dm", megabytes+megabytes/4+256)
+}
+
+// writeIdentity gives the machine the name and the addresses of its own. What a container has in
+// /etc/hosts is the address and the name the container runtime gave it, which are not the machine's.
+func writeIdentity(sysroot string, name string) {
+	if os.MkdirAll(filepath.Join(sysroot, "etc"), 0755) != nil {
+		return
+	}
+	os.WriteFile(filepath.Join(sysroot, "etc", "hostname"), []byte(name+"\n"), 0644)
+	os.WriteFile(filepath.Join(sysroot, "etc", "hosts"),
+		[]byte("127.0.0.1\tlocalhost "+name+"\n::1\tlocalhost ip6-localhost ip6-loopback\n"), 0644)
 }
