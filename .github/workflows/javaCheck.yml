@@ -28,8 +28,8 @@ jobs:
         run: |
           cat > m.json <<'EOF'
           [
-           {"name":"temurin","dir":"temurin-jre-resolved","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"8080","path":"/","match":"hello from java","wait":240},
-           {"name":"semeru","dir":"semeru","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"8080","path":"/","match":"hello from java","wait":240},
+           {"name":"temurin","diag":true,"dir":"temurin-jre-resolved","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"8080","path":"/","match":"hello from java","wait":240},
+           {"name":"semeru","diag":true,"dir":"semeru","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"8080","path":"/","match":"hello from java","wait":240},
            {"name":"glassfish","dir":"glassfish","df":"Dockerfile","bargs":"","exe":"java","settle":90,"trace":300,"port":"8080","path":"/","match":"GlassFish","wait":700},
            {"name":"wildfly","dir":"wildfly","df":"Dockerfile","bargs":"","exe":"java","settle":45,"trace":180,"port":"8080","path":"/","match":"WildFly","wait":600},
            {"name":"tomcat","dir":"tomcat","df":"Dockerfile","bargs":"","exe":"java","settle":30,"trace":120,"port":"8080","path":"/","match":"Apache Tomcat","wait":400},
@@ -65,6 +65,7 @@ jobs:
       URL_PATH: ${{ matrix.path }}
       MATCH: ${{ matrix.match }}
       WAIT: ${{ matrix.wait }}
+      DIAG: ${{ matrix.diag }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -146,6 +147,9 @@ jobs:
           p="$HOME/.ops/local_packages/amd64/t-$NAME"
           echo "package: $(du -sh "$p/sysroot" | cut -f1), files: $(find "$p/sysroot" -type f | wc -l)"
           jq -c '{Program, Args: (.Args | tostring | .[0:600])}' "$p/package.manifest"
+          echo "top of the sysroot:"; ls -la "$p/sysroot" | tail -n +4 | awk '{print "  " $1, $9, $10, $11}'
+          home="$(dirname "$(dirname "$(jq -r .Program "$p/package.manifest")")")"
+          echo "under $home/lib: $(ls "$p/sysroot$home/lib" 2>/dev/null | tr '\n' ' ' | cut -c1-600)"
       - name: Boot it
         run: |
           ./ops pkg load -l "t-$NAME" --accel=false ${PORT:+-p "$PORT"} > boot.log 2>&1 &
@@ -160,7 +164,11 @@ jobs:
             fi
             if ! pgrep -f qemu-system > /dev/null && [ "$i" -gt 30 ]; then echo "the machine stopped after $i turns"; break; fi
           done
+          if [ $ok = 0 ] && [ -n "$PORT" ]; then
+            echo "last answer: $(curl -sS --max-time 5 -o /dev/null -w 'http %{http_code}' "http://127.0.0.1:$PORT$URL_PATH" 2>&1 | head -c 300)"
+          fi
           pkill -f qemu-system || true
+          sleep 2
           clean() { tr '\r' '\n' < boot.log | grep -vE '^ *[0-9]+% \||^ *$|^warning: stat |points at nothing|is left out:' | cut -c1-400; }
           if [ $ok = 1 ]; then
             echo "BOOT PASS $NAME after $i turns"; clean | grep -m3 -- "$MATCH" || true
@@ -170,3 +178,34 @@ jobs:
           echo "--- first ---"; clean | head -40 || true
           echo "--- last ---"; clean | tail -80 || true
           exit 1
+      # Diagnosis only: the same package made while the traced container is asked over its port,
+      # to tell a file reached only when a request is served from anything else.
+      - name: Diagnose with a request during the trace
+        if: failure() && env.DIAG == 'true'
+        run: |
+          (
+            for i in $(seq 1 40); do
+              c=$(docker ps -q --filter "ancestor=jc-$NAME:latest" | head -1)
+              if [ -n "$c" ]; then
+                ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$c")
+                curl -s --max-time 2 -o /dev/null "http://$ip:$PORT$URL_PATH" && echo "asked the traced container at $ip"
+              fi
+              sleep 3
+            done
+          ) > ask.log 2>&1 &
+          mapfile -d '' flags < flags.bin
+          ./ops pkg from-docker "jc-$NAME:latest" --trace --trace-timeout "$TRACE" --name "t-$NAME-x" --verbose "${flags[@]}" > pkg2.log 2>&1
+          wait
+          sort -u ask.log | head -3
+          grep -E '^the program opened' pkg2.log || true
+          a="$HOME/.ops/local_packages/amd64/t-$NAME/sysroot"; b="$HOME/.ops/local_packages/amd64/t-$NAME-x/sysroot"
+          echo "carried only when a request was served:"
+          comm -13 <(cd "$a" && find . | sort) <(cd "$b" && find . | sort) | head -30
+          ./ops pkg load -l "t-$NAME-x" --accel=false -p "$PORT" > boot2.log 2>&1 &
+          ok=0
+          for i in $(seq 1 "$WAIT"); do
+            curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null | grep -q -- "$MATCH" && { ok=1; break; }
+            sleep 2
+          done
+          pkill -f qemu-system || true
+          if [ $ok = 1 ]; then echo "DIAG BOOT PASS $NAME with a request during the trace"; else echo "DIAG BOOT FAIL $NAME"; tail -20 boot2.log; fi
