@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/tls"
 	"debug/elf"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -26,7 +25,6 @@ import (
 	dockerImage "github.com/docker/docker/api/types/image"
 	dockerClient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
-	api "github.com/nanovms/ops/lepton"
 	"github.com/nanovms/ops/types"
 )
 
@@ -715,15 +713,8 @@ var belongsToTheContainer = []string{"HOSTNAME", "SHLVL", "OLDPWD", "_"}
 // left running at the end of it, unless targetExecutable is given: that followed by args is run
 // instead.
 func ExtractFromDockerImageByTrace(imageName string, packageName string, parch string, targetExecutable string, quiet bool, verbose bool, seconds int, exercise []string, args []string) (string, string) {
-	var version string
-	if packageName == "" {
-		name, tag, err := ImageNameToPackageNameAndVersion(imageName)
-		if err != nil {
-			log.Fatal(err)
-		}
-		version = tag
-		packageName = strings.TrimRight(name+"_"+version, "_")
-	}
+	packageName, version := packageNameAndVersion(imageName, packageName)
+	// like docker if the user doesn't provide version of the image we consider "latest" as the version
 	if version == "" {
 		version = "latest"
 	}
@@ -737,13 +728,8 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 	if !strings.Contains(imageName, ":") {
 		imageName += ":latest"
 	}
-	if _, err := cli.ImageInspect(ctx, imageName); err != nil {
-		pulled, err := cli.ImagePull(ctx, imageName, dockerImage.PullOptions{})
-		if err != nil {
-			log.Fatal(err)
-		}
-		io.Copy(io.Discard, pulled)
-		pulled.Close()
+	if err := pullImage(ctx, cli, imageName, true, quiet); err != nil {
+		log.Fatal(err)
 	}
 
 	argv, workingDir, env, exposed, err := imageProgram(ctx, cli, imageName)
@@ -815,7 +801,7 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		cwd = workingDir
 	}
 	for _, e := range env {
-		if name, value, ok := strings.Cut(e, "="); ok && !contains(belongsToTheContainer, name) {
+		if name, value, ok := strings.Cut(e, "="); ok && !containsString(belongsToTheContainer, name) {
 			runningEnv[name] = value
 		}
 	}
@@ -855,21 +841,5 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		c.ManifestPassthrough = map[string]any{"cwd": cwd}
 	}
 
-	manifest, _ := json.MarshalIndent(c, "", "  ")
-	if err := os.WriteFile(path.Join(tempDirectory, "package.manifest"), manifest, 0666); err != nil {
-		log.Panic(err)
-	}
-
-	packageDirectory := MovePackageFiles(tempDirectory, path.Join(api.LocalPackagesRoot, parch, packageName))
-
-	return packageName, packageDirectory
-}
-
-func contains(list []string, item string) bool {
-	for _, entry := range list {
-		if entry == item {
-			return true
-		}
-	}
-	return false
+	return writePackage(tempDirectory, packageName, parch, c)
 }
