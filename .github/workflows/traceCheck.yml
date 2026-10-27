@@ -55,9 +55,11 @@ jobs:
           sudo apt-get install -y qemu-system-x86
           sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
       - name: Build the package
+        env:
+          FLAGS: ${{ matrix.flags }}
         run: |
           chmod +x ops
-          eval ./ops pkg from-docker ${{ matrix.image }} --trace --name t-${{ matrix.name }} --verbose ${{ matrix.flags }} 2>&1 | tail -30
+          eval "./ops pkg from-docker ${{ matrix.image }} --trace --name t-${{ matrix.name }} --verbose $FLAGS" 2>&1 | tail -30
           p=$(ls -d "$HOME"/.ops/local_packages/*/t-${{ matrix.name }})
           cat "$p/package.manifest" | head -30
           du -sh "$p/sysroot"; (cd "$p/sysroot" && find . -type f | wc -l)
