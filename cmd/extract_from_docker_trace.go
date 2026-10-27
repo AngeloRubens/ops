@@ -332,7 +332,15 @@ func copyTouched(ctx context.Context, cli *dockerClient.Client, containerID stri
 			link = path.Clean(link)
 			names := append([]string{p}, aliases[p]...)
 			aliases[link] = append(aliases[link], names...)
-			if done[link] {
+			if notCarried(link) {
+				// a log that is a link to the console of the container: an empty file takes its place,
+				// so that opening it works
+				for _, name := range names {
+					if os.MkdirAll(filepath.Join(sysroot, path.Dir(name)), 0755) == nil {
+						os.WriteFile(filepath.Join(sysroot, name), nil, 0644)
+					}
+				}
+			} else if done[link] {
 				// it was carried already, under its own name
 				for _, name := range names {
 					copyHostFile(sysroot, link, name)
