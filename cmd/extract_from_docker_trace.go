@@ -855,7 +855,44 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		c.ManifestPassthrough["cwd"] = cwd
 	}
 
+	if configs := configurationRead(sysroot); !quiet && len(configs) > 0 {
+		fmt.Println("the program read these files of configuration, which the config of the user can replace with its own:")
+		for i, name := range configs {
+			if i == 20 {
+				fmt.Printf("  and %d more\n", len(configs)-i)
+				break
+			}
+			fmt.Println("  " + name)
+		}
+	}
+
 	return writePackage(tempDirectory, packageName, parch, c)
+}
+
+// configurationRead says which of the files the package carries are the ones a user changes: what
+// the program read from /etc, and the files named as configuration. A file that is put in the
+// image with the same name in the configuration of the user replaces the one in the package.
+func configurationRead(sysroot string) []string {
+	var found []string
+
+	filepath.Walk(sysroot, func(file string, info os.FileInfo, err error) error {
+		if err != nil || !info.Mode().IsRegular() {
+			return nil
+		}
+		name := "/" + filepath.ToSlash(strings.TrimPrefix(file, sysroot+"/"))
+		switch {
+		case strings.HasPrefix(name, "/etc/ssl/certs/"), strings.HasPrefix(name, "/etc/ld.so"), name == "/etc/hosts", name == "/etc/hostname":
+		case strings.HasPrefix(name, "/etc/"):
+			found = append(found, name)
+		case containsString([]string{".conf", ".cnf", ".ini", ".yaml", ".yml", ".toml", ".properties"}, path.Ext(name)):
+			found = append(found, name)
+		}
+		return nil
+	})
+
+	sort.Strings(found)
+
+	return found
 }
 
 // volumeSize is how much room the machine is given for the files it carries and the ones it writes.
