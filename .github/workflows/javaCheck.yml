@@ -41,7 +41,8 @@ jobs:
            {"name":"rocketmq","dir":"rocketmq-resolved","df":"Dockerfile","bargs":"","exe":"java","settle":45,"trace":240,"port":"","path":"","match":"The Name Server boot success","wait":600},
            {"name":"activemq","dir":"activemq","df":"Dockerfile","bargs":"--build-arg java_version=21 --build-arg activemq_dist=apache-activemq-6.1.4-bin.tar.gz","exe":"java","settle":45,"trace":240,"port":"","path":"","match":"ActiveMQ.*started","wait":600},
            {"name":"tomee","dir":"tomee","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"8080","path":"/","match":"TomEE","wait":600},
-           {"name":"vertx","dir":"vertx","df":"docker-maven/Dockerfile","ctx":".","bargs":"","exe":"java","settle":30,"trace":180,"port":"8888","path":"/","match":"Hello from Vert.x","wait":600}
+           {"name":"vertx","dir":"vertx","df":"docker-maven/Dockerfile","ctx":".","bargs":"","exe":"java","settle":30,"trace":180,"port":"8888","path":"/","match":"Hello from Vert.x","wait":600},
+           {"name":"hazelcast","dir":"hazelcast","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"is STARTED","wait":600}
           ]
           EOF
           # .github/javaCheck.only, when present, names the scenarios to run, one per line
@@ -101,6 +102,12 @@ jobs:
           curl -fsSL -o sc/test/dockerfile/tomee/Dockerfile https://raw.githubusercontent.com/tomitribe/docker-tomee/master/TomEE-11.0/jre25/Temurin/ubuntu/plus/Dockerfile
       - name: Fetch the Vert.x project
         run: git clone -q --depth=1 https://github.com/vertx-howtos/executable-jar-docker-howto sc/test/dockerfile/vertx
+      - name: Fetch the Hazelcast project
+        run: |
+          d=sc/test/dockerfile/hazelcast
+          git clone -q --depth=1 https://github.com/hazelcast/hazelcast-docker hz-src
+          mkdir -p "$d" && cp hz-src/hazelcast-oss/* "$d"/
+          curl -fsSL -o "$d/hazelcast-distribution.zip" https://repo1.maven.org/maven2/com/hazelcast/hazelcast-distribution/5.7.0/hazelcast-distribution-5.7.0.zip
       - name: Build the image
         run: |
           dir="$PWD/sc/test/dockerfile/$DIR"
