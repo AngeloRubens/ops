@@ -1,0 +1,79 @@
+name: from-docker --trace
+on:
+  push:
+    branches: ["check/split-*", check/from-docker-trace]
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt and vet
+        run: |
+          unformatted=$(gofmt -l cmd/)
+          if [ -n "$unformatted" ]; then gofmt -d cmd/; exit 1; fi
+          go vet ./cmd/...
+      - run: go build -o ops -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ops
+          path: ops
+  scenario:
+    name: ${{ matrix.name }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: nginx
+            image: nginx:1.29-alpine
+            flags: --file nginx -a -g -a "daemon off; master_process off;"
+            port: 80
+            match: "Welcome to nginx"
+          - name: python
+            image: python:3.12-slim
+            flags: --file python3 -a -m -a http.server -a 8000
+            port: 8000
+            match: "Directory listing"
+          - name: java
+            image: eclipse-temurin:25-jre
+            flags: --file java -a --version
+            port: ""
+            match: "OpenJDK"
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ops
+      - name: Install qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86
+          sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+      - name: Build the package
+        env:
+          FLAGS: ${{ matrix.flags }}
+        run: |
+          chmod +x ops
+          eval "./ops pkg from-docker ${{ matrix.image }} --observe --name t-${{ matrix.name }} --verbose $FLAGS" 2>&1 | tail -30
+          p=$(ls -d "$HOME"/.ops/local_packages/*/t-${{ matrix.name }})
+          cat "$p/package.manifest" | head -30
+          du -sh "$p/sysroot"; (cd "$p/sysroot" && find . -type f | wc -l)
+      - name: Boot it
+        run: |
+          port="${{ matrix.port }}"
+          ./ops pkg load -l t-${{ matrix.name }} --accel=false ${port:+-p $port} > boot.log 2>&1 &
+          for i in $(seq 1 150); do
+            if [ -n "$port" ]; then
+              curl -sS --max-time 2 "http://127.0.0.1:$port/" 2>/dev/null | grep -q "${{ matrix.match }}" && echo "ANSWERED" && exit 0
+            else
+              grep -q "${{ matrix.match }}" boot.log && echo "PRINTED" && exit 0
+            fi
+            sleep 2
+          done
+          tail -30 boot.log
+          exit 1
