@@ -836,11 +836,23 @@ func ExtractFromDockerImageByTrace(imageName string, packageName string, parch s
 		log.Fatalf("%s did not open %s: say it with --file", imageName, program)
 	}
 
+	// the machine has a name of its own, and a program that asks for its address by that name must
+	// be able to find it
+	writeIdentity(sysroot, packageName)
+
 	c := &types.Config{
-		Program: program,
-		Args:    append([]string{program}, argv[1:]...),
-		Version: version,
-		Env:     runningEnv,
+		Program:      program,
+		Args:         append([]string{program}, argv[1:]...),
+		Version:      version,
+		Env:          runningEnv,
+		BaseVolumeSz: volumeSize(sysroot),
+	}
+	// an image is made for linux, and a program may check that that is where it runs: java 8
+	// stops with "Platform not recognized" when uname says Nanos
+	c.ManifestPassthrough = map[string]any{"uname": map[string]any{"sysname": "Linux"}}
+	if cwd != "" && cwd != "/" {
+		c.Env["PWD"] = cwd
+		c.ManifestPassthrough["cwd"] = cwd
 	}
 
 	if configs := configurationRead(sysroot); !quiet && len(configs) > 0 {
@@ -881,4 +893,31 @@ func configurationRead(sysroot string) []string {
 	sort.Strings(found)
 
 	return found
+}
+
+// volumeSize is how much room the machine is given for the files it carries and the ones it writes.
+func volumeSize(sysroot string) string {
+	var total int64
+
+	filepath.Walk(sysroot, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+
+	megabytes := total / (1024 * 1024)
+
+	return fmt.Sprintf("%dm", megabytes+megabytes/4+256)
+}
+
+// writeIdentity gives the machine the name and the addresses of its own. What a container has in
+// /etc/hosts is the address and the name the container runtime gave it, which are not the machine's.
+func writeIdentity(sysroot string, name string) {
+	if os.MkdirAll(filepath.Join(sysroot, "etc"), 0755) != nil {
+		return
+	}
+	os.WriteFile(filepath.Join(sysroot, "etc", "hostname"), []byte(name+"\n"), 0644)
+	os.WriteFile(filepath.Join(sysroot, "etc", "hosts"),
+		[]byte("127.0.0.1\tlocalhost "+name+"\n::1\tlocalhost ip6-localhost ip6-loopback\n"), 0644)
 }
