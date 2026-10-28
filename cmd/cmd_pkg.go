@@ -506,10 +506,10 @@ func fromDockerCommandHandler(cmd *cobra.Command, args []string) {
 		exitWithError(err.Error())
 	}
 
-	trace, _ := flags.GetBool("trace")
-	if trace {
-		traceTimeout, _ := flags.GetInt("trace-timeout")
-		packageName, _ = ExtractFromDockerImageByTrace(imageName, packageName, pkgFlags.Parch(), targetExecutable, quiet, verbose, traceTimeout, cmdArgs)
+	observe, _ := flags.GetBool("observe")
+	if observe {
+		observeTimeout, _ := flags.GetInt("observe-timeout")
+		packageName, _ = ExtractFromDockerImageByTrace(imageName, packageName, pkgFlags.Parch(), targetExecutable, quiet, verbose, observeTimeout, cmdArgs)
 		fmt.Println(packageName)
 		return
 	}
@@ -837,8 +837,8 @@ func fromDockerCommand() *cobra.Command {
 	persistentFlags.StringP("name", "", "", "name of the package")
 	persistentFlags.BoolP("local", "l", false, "load local package")
 	persistentFlags.BoolP("nodiscover", "", false, "don't try to discover linked libs")
-	persistentFlags.BoolP("trace", "", false, "run the image and carry only the files the program opens")
-	persistentFlags.Int("trace-timeout", 60, "seconds to watch the image for with --trace")
+	persistentFlags.BoolP("observe", "", false, "run the image and carry only the files the program opens")
+	persistentFlags.Int("observe-timeout", 60, "seconds to watch the image for with --observe")
 
 	return cmdFromDocker
 }
