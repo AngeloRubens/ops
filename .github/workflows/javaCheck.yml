@@ -39,7 +39,8 @@ jobs:
            {"name":"openliberty","dir":"openliberty","df":"upstream/releases/latest/kernel-slim/Dockerfile.ubi10-minimal.openjdk21","bargs":"","exe":"java","settle":90,"trace":300,"port":"","path":"","match":"CWWKF0011I","wait":600},
            {"name":"mysql","dir":"mysql-resolved","df":"Dockerfile","bargs":"","exe":"mysqld","settle":90,"trace":240,"port":"","path":"","match":"ready for connections","wait":600},
            {"name":"rocketmq","dir":"rocketmq-resolved","df":"Dockerfile","bargs":"","exe":"java","settle":45,"trace":240,"port":"","path":"","match":"The Name Server boot success","wait":600},
-           {"name":"activemq","dir":"activemq","df":"Dockerfile","bargs":"--build-arg java_version=21 --build-arg activemq_dist=apache-activemq-6.1.4-bin.tar.gz","exe":"java","settle":45,"trace":240,"port":"","path":"","match":"ActiveMQ.*started","wait":600}
+           {"name":"activemq","dir":"activemq","df":"Dockerfile","bargs":"--build-arg java_version=21 --build-arg activemq_dist=apache-activemq-6.1.4-bin.tar.gz","exe":"java","settle":45,"trace":240,"port":"","path":"","match":"ActiveMQ.*started","wait":600},
+           {"name":"tomee","dir":"tomee","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"8080","path":"/","match":"TomEE","wait":600}
           ]
           EOF
           # .github/javaCheck.only, when present, names the scenarios to run, one per line
@@ -92,6 +93,10 @@ jobs:
             'FROM ibm-semeru-runtimes:open-21-jre' \
             'COPY --from=build /app.jar /app.jar' \
             'CMD ["java", "-jar", "/app.jar"]' > test/dockerfile/semeru/Dockerfile
+      - name: Fetch the TomEE Dockerfile
+        run: |
+          mkdir -p sc/test/dockerfile/tomee
+          curl -fsSL -o sc/test/dockerfile/tomee/Dockerfile https://raw.githubusercontent.com/tomitribe/docker-tomee/master/TomEE-11.0/jre25/Temurin/ubuntu/plus/Dockerfile
       - name: Build the image
         run: |
           dir="$PWD/sc/test/dockerfile/$DIR"
