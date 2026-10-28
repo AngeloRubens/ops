@@ -1,0 +1,259 @@
+name: from-docker --trace, java and friends
+on:
+  push:
+    branches: [check/split-3]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build -o ops -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ops-java
+          path: ops
+      # dir: scenario directory under test/dockerfile; df: the Dockerfile in it (its directory is the
+      # build context); exe: the program the container ends up running; settle: seconds the image
+      # runs with its own command before that program is looked for; trace: --observe-timeout;
+      # port/path/match: what the booted package has to answer (on the console when port is empty);
+      # wait: turns of 2 s for the boot
+      - id: matrix
+        run: |
+          cat > m.json <<'EOF'
+          [
+           {"name":"temurin","diag":true,"dir":"temurin-jre-resolved","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"8080","path":"/","match":"hello from java","wait":240},
+           {"name":"semeru","diag":true,"dir":"semeru","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"8080","path":"/","match":"hello from java","wait":240},
+           {"name":"glassfish","dir":"glassfish","df":"Dockerfile","bargs":"","exe":"java","settle":90,"trace":300,"port":"8080","path":"/","match":"GlassFish","wait":700},
+           {"name":"wildfly","dir":"wildfly","df":"Dockerfile","bargs":"","exe":"java","settle":45,"trace":180,"port":"8080","path":"/","match":"WildFly","wait":600},
+           {"name":"tomcat","dir":"tomcat","df":"Dockerfile","bargs":"","exe":"java","settle":30,"trace":120,"port":"8080","path":"/","match":"Apache Tomcat","wait":400},
+           {"name":"springboot","dir":"springboot","df":"Dockerfile","bargs":"","exe":"java","settle":30,"trace":180,"port":"8080","path":"/","match":"hello from spring boot","wait":600},
+           {"name":"quarkus","dir":"quarkus","df":"Dockerfile.jvm","bargs":"","exe":"java","settle":30,"trace":180,"port":"8080","path":"/hello","match":"Hello","wait":600},
+           {"name":"helidon","dir":"helidon","df":"app/Dockerfile","bargs":"","exe":"java","settle":30,"trace":120,"port":"8080","path":"/greet","match":"Hello World","wait":400},
+           {"name":"openliberty","dir":"openliberty","df":"upstream/releases/latest/kernel-slim/Dockerfile.ubi10-minimal.openjdk21","bargs":"","exe":"java","settle":90,"trace":300,"port":"","path":"","match":"CWWKF0011I","wait":600},
+           {"name":"mysql","dir":"mysql-resolved","df":"Dockerfile","bargs":"","exe":"mysqld","settle":90,"trace":240,"port":"","path":"","match":"ready for connections","wait":600},
+           {"name":"rocketmq","dir":"rocketmq-resolved","df":"Dockerfile","bargs":"","exe":"java","settle":45,"trace":240,"port":"","path":"","match":"The Name Server boot success","wait":600},
+           {"name":"activemq","dir":"activemq","df":"Dockerfile","bargs":"--build-arg java_version=21 --build-arg activemq_dist=apache-activemq-6.1.4-bin.tar.gz","exe":"java","settle":45,"trace":240,"port":"","path":"","match":"ActiveMQ.*started","wait":600}
+          ]
+          EOF
+          # .github/javaCheck.only, when present, names the scenarios to run, one per line
+          only="$(cat .github/javaCheck.only 2>/dev/null | xargs)"
+          echo "matrix=$(jq -c --arg only "$only" '{include: [.[] | select($only == "" or (.name as $n | $only | split(" ") | index($n)))]}' m.json)" >> "$GITHUB_OUTPUT"
+  scenario:
+    name: ${{ matrix.name }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.build.outputs.matrix) }}
+    env:
+      NAME: ${{ matrix.name }}
+      DIR: ${{ matrix.dir }}
+      DF: ${{ matrix.df }}
+      BARGS: ${{ matrix.bargs }}
+      EXE: ${{ matrix.exe }}
+      SETTLE: ${{ matrix.settle }}
+      TRACE: ${{ matrix.trace }}
+      PORT: ${{ matrix.port }}
+      URL_PATH: ${{ matrix.path }}
+      MATCH: ${{ matrix.match }}
+      WAIT: ${{ matrix.wait }}
+      DIAG: ${{ matrix.diag }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ops-java
+      - name: Install qemu
+        run: |
+          chmod +x ops
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 > /dev/null
+          sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+      - name: Fetch the scenarios
+        run: |
+          git init -q sc && cd sc
+          git fetch -q --depth=1 https://github.com/AngeloRubens/ops feat/from-dockerfile
+          git checkout -q FETCH_HEAD -- test/dockerfile
+          # the same hello server as temurin-jre-resolved, compiled for 21 and run on OpenJ9
+          mkdir -p test/dockerfile/semeru
+          cp test/dockerfile/temurin-jre-resolved/Main.java test/dockerfile/semeru/
+          printf '%s\n' \
+            'FROM eclipse-temurin:21-jdk AS build' \
+            'WORKDIR /src' \
+            'COPY Main.java .' \
+            'RUN javac --release 21 Main.java && jar --create --file /app.jar --main-class Main Main.class' \
+            'FROM ibm-semeru-runtimes:open-21-jre' \
+            'COPY --from=build /app.jar /app.jar' \
+            'CMD ["java", "-jar", "/app.jar"]' > test/dockerfile/semeru/Dockerfile
+      - name: Build the image
+        run: |
+          dir="$PWD/sc/test/dockerfile/$DIR"
+          if [ -x "$dir/prepare.sh" ]; then "$dir/prepare.sh" "$dir" > prepare.log 2>&1 || { tail -40 prepare.log; exit 1; }; fi
+          df="$dir/$DF"
+          # shellcheck disable=SC2086
+          docker build -q $BARGS -t "jc-$NAME:latest" -f "$df" "$(dirname "$df")" > build.log 2>&1 || { tail -40 build.log; exit 1; }
+          docker image inspect "jc-$NAME:latest" --format 'image: {{.Size}} bytes, user {{.Config.User}}, workdir {{.Config.WorkingDir}}, entrypoint {{.Config.Entrypoint}} cmd {{.Config.Cmd}}'
+      - name: Find the real command
+        run: |
+          docker run -d --name app "jc-$NAME:latest" > /dev/null
+          sleep "$SETTLE"
+          pids=$(docker top app -eo pid | tail -n +2 | sort -n)
+          cands=()
+          for p in $pids; do
+            e=$(sudo readlink "/proc/$p/exe" 2>/dev/null) || continue
+            [ "$(basename "$e")" = "$EXE" ] && cands+=("$p")
+          done
+          echo "processes named $EXE: ${cands[*]}"
+          # the one that has no other of its kind below it: a launcher in java starts the server in java
+          main=""
+          for p in "${cands[@]}"; do
+            leaf=1
+            for q in "${cands[@]}"; do
+              [ "$q" = "$p" ] && continue
+              a=$q
+              while [ "$a" -gt 1 ]; do
+                a=$(sudo awk '{print $4}' "/proc/$a/stat" 2>/dev/null) || break
+                [ "$a" = "$p" ] && { leaf=0; break; }
+              done
+            done
+            [ $leaf = 1 ] && { main=$p; break; }
+          done
+          if [ -z "$main" ]; then
+            echo "no $EXE process after $SETTLE s"; docker top app; docker logs app 2>&1 | tail -40; exit 1
+          fi
+          mapfile -d '' argv < <(sudo cat "/proc/$main/cmdline")
+          exe=$(sudo readlink "/proc/$main/exe")
+          echo "main pid $main exe $exe cwd $(sudo readlink "/proc/$main/cwd") argc ${#argv[@]}"
+          docker rm -f app > /dev/null
+          file="${argv[0]}"
+          case "$file" in */*) ;; *) file="$exe" ;; esac
+          # the tool finds the program itself: the image is run the way it starts
+          : > flags.bin
+          printf '%s ' "${argv[@]}" | cut -c1-1500; echo
+      - name: Build the package
+        run: |
+          mapfile -d '' flags < flags.bin
+          rc=0
+          ./ops pkg from-docker "jc-$NAME:latest" --observe --observe-timeout "$TRACE" --name "t-$NAME" --verbose "${flags[@]}" > pkg.log 2>&1 || rc=$?
+          grep -E '^the program opened|is run by|did not open|opened nothing' pkg.log | head -20 || true
+          echo "not carried: $(grep -c '^not carried' pkg.log)"; grep '^not carried' pkg.log | head -10 || true
+          if [ $rc -ne 0 ]; then tail -30 pkg.log; exit 1; fi
+          p="$HOME/.ops/local_packages/amd64/t-$NAME"
+          echo "package: $(du -sh "$p/sysroot" | cut -f1), files: $(find "$p/sysroot" -type f | wc -l)"
+          jq -c '{Program, Args: (.Args | tostring | .[0:600])}' "$p/package.manifest"
+          echo "top of the sysroot:"; ls -la "$p/sysroot" | tail -n +4 | awk '{print "  " $1, $9, $10, $11}'
+          home="$(dirname "$(dirname "$(jq -r .Program "$p/package.manifest")")")"
+          echo "under $home/lib: $(ls "$p/sysroot$home/lib" 2>/dev/null | tr '\n' ' ' | cut -c1-600)"
+      - name: Boot it
+        run: |
+          ./ops pkg load -l "t-$NAME" --accel=false ${PORT:+-p "$PORT"} > boot.log 2>&1 &
+          ok=0
+          for i in $(seq 1 "$WAIT"); do
+            if [ -n "$PORT" ]; then
+              curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null | grep -q -- "$MATCH" && { ok=1; break; }
+              sleep 2
+            else
+              sleep 2
+              grep -q -- "$MATCH" boot.log && { ok=1; break; }
+            fi
+            if ! pgrep -f qemu-system > /dev/null && [ "$i" -gt 30 ]; then echo "the machine stopped after $i turns"; break; fi
+          done
+          if [ $ok = 0 ] && [ -n "$PORT" ]; then
+            echo "last answer: $(curl -sS --max-time 5 -o /dev/null -w 'http %{http_code}' "http://127.0.0.1:$PORT$URL_PATH" 2>&1 | head -c 300)"
+          fi
+          pkill -f qemu-system || true
+          sleep 2
+          clean() { tr '\r' '\n' < boot.log | grep -vE '^ *[0-9]+% \||^ *$|^warning: stat |points at nothing|is left out:' | cut -c1-400; }
+          if [ $ok = 1 ]; then
+            echo "BOOT PASS $NAME after $i turns"; clean | grep -m3 -- "$MATCH" || true
+            exit 0
+          fi
+          echo "BOOT FAIL $NAME (wanted: $MATCH)"
+          echo "--- first ---"; clean | head -40 || true
+          echo "--- last ---"; clean | tail -80 || true
+          exit 1
+      # Diagnosis only: the same package made while the traced container is asked over its port,
+      # to tell a file reached only when a request is served from anything else.
+      - name: Diagnose with a request during the trace
+        if: failure() && env.DIAG == 'true'
+        run: |
+          (
+            for i in $(seq 1 40); do
+              c=$(docker ps -q --filter "ancestor=jc-$NAME:latest" | head -1)
+              if [ -n "$c" ]; then
+                ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$c")
+                curl -s --max-time 2 -o /dev/null "http://$ip:$PORT$URL_PATH" && echo "asked the traced container at $ip"
+              fi
+              sleep 3
+            done
+          ) > ask.log 2>&1 &
+          mapfile -d '' flags < flags.bin
+          ./ops pkg from-docker "jc-$NAME:latest" --observe --observe-timeout "$TRACE" --name "t-$NAME-x" --verbose "${flags[@]}" > pkg2.log 2>&1
+          wait
+          sort -u ask.log | head -3
+          grep -E '^the program opened' pkg2.log || true
+          a="$HOME/.ops/local_packages/amd64/t-$NAME/sysroot"; b="$HOME/.ops/local_packages/amd64/t-$NAME-x/sysroot"
+          echo "carried only when a request was served:"
+          comm -13 <(cd "$a" && find . | sort) <(cd "$b" && find . | sort) | head -30
+          ./ops pkg load -l "t-$NAME-x" --accel=false -p "$PORT" > boot2.log 2>&1 &
+          ok=0
+          for i in $(seq 1 "$WAIT"); do
+            curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null | grep -q -- "$MATCH" && { ok=1; break; }
+            sleep 2
+          done
+          pkill -f qemu-system || true
+          if [ $ok = 1 ]; then echo "DIAG BOOT PASS $NAME with a request during the trace"; else echo "DIAG BOOT FAIL $NAME"; tail -20 boot2.log; fi
+      # Diagnosis only: the package booted again with what the manifest lacks - the working directory
+      # and the other passthrough keys pkg load drops, a disk with room, uname Linux, the program
+      # under its real name, a host name the machine can resolve - to tell which of these the
+      # failure needs.
+      - name: Boot with the manifest completed
+        if: failure()
+        run: |
+          p="$HOME/.ops/local_packages/amd64/t-$NAME"; m="$p/package.manifest"; s="$p/sysroot"
+          [ -f "$m" ] || { echo "no package"; exit 0; }
+          mb=$(du -sm "$s" | cut -f1)
+          prog=$(jq -r .Program "$m")
+          real=$(docker run --rm --entrypoint readlink "jc-$NAME:latest" -f "$prog" 2>/dev/null || true)
+          if [ -n "$real" ] && [ "$real" != "$prog" ] && [ -f "$s$real" ]; then
+            cp "$m" "$m.orig"; jq --arg r "$real" '.Program = $r' "$m.orig" > "$m"
+          fi
+          jq -c --arg sz "$((mb * 2 + 256))m" '{BaseVolumeSz: $sz, ManifestPassthrough: ((.ManifestPassthrough // {}) + {uname: {sysname: "Linux"}})}' "$m" > cfg.json
+          cat cfg.json; echo
+          boot() {
+            ./ops pkg load -l "t-$NAME" --accel=false -c cfg.json ${PORT:+-p "$PORT"} > "$1" 2>&1 &
+            ok=0
+            for i in $(seq 1 "$WAIT"); do
+              if [ -n "$PORT" ]; then
+                curl -sS --max-time 2 "http://127.0.0.1:$PORT$URL_PATH" 2>/dev/null | grep -q -- "$MATCH" && { ok=1; break; }
+                sleep 2
+              else
+                sleep 2
+                grep -q -- "$MATCH" "$1" && { ok=1; break; }
+              fi
+              if ! pgrep -f qemu-system > /dev/null && [ "$i" -gt 30 ]; then echo "the machine stopped after $i turns"; break; fi
+            done
+            pkill -f qemu-system || true
+            sleep 3
+            if [ $ok = 1 ]; then echo "COMPLETED BOOT PASS $NAME ($1) after $i turns"; return 0; fi
+            echo "COMPLETED BOOT FAIL $NAME ($1)"
+            tr '\r' '\n' < "$1" | grep -vE '^ *[0-9]+% \||^ *$|^warning: |points at nothing|is left out:|^\s+at |^ +[0-9a-f]{16}:|^ +r[0-9a-z]+: ' | cut -c1-300 | awk '!s[$0]++' | grep -E -m 25 -i 'error|exception|fatal|SIG|problematic|# [JVC] |caused|unknown|fail' || true
+            return 1
+          }
+          # which of the additions each failure needs: first without a host name it can resolve,
+          # twice, then with one and without uname Linux
+          boot boot3.log; a=$?
+          boot boot4.log; b=$?
+          echo "t-$NAME" > "$s/etc/hostname"
+          printf '127.0.0.1\tlocalhost t-%s\n::1\tlocalhost ip6-localhost ip6-loopback\n' "$NAME" > "$s/etc/hosts"
+          jq -c 'del(.ManifestPassthrough.uname)' cfg.json > cfg2.json && mv cfg2.json cfg.json
+          echo "with a host name, without uname: $(cat cfg.json)"
+          boot boot5.log
+          exit 1
