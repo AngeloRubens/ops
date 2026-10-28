@@ -106,8 +106,9 @@ jobs:
           dir="$PWD/sc/test/dockerfile/$DIR"
           if [ -x "$dir/prepare.sh" ]; then "$dir/prepare.sh" "$dir" > prepare.log 2>&1 || { tail -40 prepare.log; exit 1; }; fi
           df="$dir/$DF"
+          if [ -n "$CTX" ]; then ctx="$dir/$CTX"; else ctx="$(dirname "$df")"; fi
           # shellcheck disable=SC2086
-          docker build -q $BARGS -t "jc-$NAME:latest" -f "$df" "${CTX:+$dir/$CTX}${CTX:-$(dirname "$df")}" > build.log 2>&1 || { tail -40 build.log; exit 1; }
+          docker build -q $BARGS -t "jc-$NAME:latest" -f "$df" "$ctx" > build.log 2>&1 || { tail -40 build.log; exit 1; }
           docker image inspect "jc-$NAME:latest" --format 'image: {{.Size}} bytes, user {{.Config.User}}, workdir {{.Config.WorkingDir}}, entrypoint {{.Config.Entrypoint}} cmd {{.Config.Cmd}}'
       - name: Find the real command
         run: |
