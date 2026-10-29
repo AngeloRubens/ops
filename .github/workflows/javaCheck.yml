@@ -42,7 +42,8 @@ jobs:
            {"name":"activemq","dir":"activemq","df":"Dockerfile","bargs":"--build-arg java_version=21 --build-arg activemq_dist=apache-activemq-6.1.4-bin.tar.gz","exe":"java","settle":45,"trace":240,"port":"","path":"","match":"ActiveMQ.*started","wait":600},
            {"name":"tomee","dir":"tomee","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"8080","path":"/","match":"TomEE","wait":600},
            {"name":"vertx","dir":"vertx","df":"docker-maven/Dockerfile","ctx":".","bargs":"","exe":"java","settle":30,"trace":180,"port":"8888","path":"/","match":"Hello from Vert.x","wait":600},
-           {"name":"hazelcast","dir":"hazelcast","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"is STARTED","wait":600}
+           {"name":"hazelcast","dir":"hazelcast","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"is STARTED","wait":600},
+           {"name":"cassandra","dir":"cassandra","df":"5.0/Dockerfile","ctx":"5.0","bargs":"","exe":"java","settle":90,"trace":300,"port":"","path":"","match":"Startup complete","wait":700}
           ]
           EOF
           # .github/javaCheck.only, when present, names the scenarios to run, one per line
@@ -108,6 +109,8 @@ jobs:
           git clone -q --depth=1 https://github.com/hazelcast/hazelcast-docker hz-src
           mkdir -p "$d" && cp hz-src/hazelcast-oss/* "$d"/
           curl -fsSL -o "$d/hazelcast-distribution.zip" https://repo1.maven.org/maven2/com/hazelcast/hazelcast-distribution/5.7.0/hazelcast-distribution-5.7.0.zip
+      - name: Fetch the Cassandra project
+        run: git clone -q --depth=1 https://github.com/docker-library/cassandra sc/test/dockerfile/cassandra
       - name: Build the image
         run: |
           dir="$PWD/sc/test/dockerfile/$DIR"
