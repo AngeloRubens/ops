@@ -76,6 +76,8 @@ jobs:
       MATCH: ${{ matrix.match }}
       WAIT: ${{ matrix.wait }}
       DIAG: ${{ matrix.diag }}
+      # run of AngeloRubens/nanos whose artifact "kernel" is booted in place of the released one
+      KERNEL_RUN: '41518344865'
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -225,13 +227,11 @@ jobs:
           echo "top of the sysroot:"; ls -la "$p/sysroot" | tail -n +4 | awk '{print "  " $1, $9, $10, $11}'
           home="$(dirname "$(dirname "$(jq -r .Program "$p/package.manifest")")")"
           echo "under $home/lib: $(ls "$p/sysroot$home/lib" 2>/dev/null | tr '\n' ' ' | cut -c1-600)"
-      # .github/javaCheck.kernel, when present, holds the id of a run of AngeloRubens/nanos whose
-      # artifact "kernel" is booted in place of the released one
       - name: Fetch the kernel under test
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pwd; ls -a | head -20; run="$(cat .github/javaCheck.kernel 2>/dev/null | xargs)"; echo "kernel run: $run"
+          run="$KERNEL_RUN"; echo "kernel run: $run"
           if [ -n "$run" ]; then gh run download "$run" -R AngeloRubens/nanos -n kernel -D "$PWD/kdist"; find kdist | head -30
             for d in "$HOME"/.ops/0.*; do
               case "$d" in *-arm) continue;; esac
