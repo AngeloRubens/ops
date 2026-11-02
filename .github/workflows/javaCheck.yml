@@ -142,7 +142,7 @@ jobs:
         run: |
           docker run -d --name app "jc-$NAME:latest" > /dev/null
           sleep "$SETTLE"
-          pids=$(docker top app -eo pid | tail -n +2 | sort -n)
+          pids=$(docker top app -eo pid 2>/dev/null | tail -n +2 | sort -n || true)
           cands=()
           for p in $pids; do
             e=$(sudo readlink "/proc/$p/exe" 2>/dev/null) || continue
