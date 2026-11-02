@@ -44,7 +44,8 @@ jobs:
            {"name":"vertx","dir":"vertx","df":"docker-maven/Dockerfile","ctx":".","bargs":"","exe":"java","settle":30,"trace":180,"port":"8888","path":"/","match":"Hello from Vert.x","wait":600},
            {"name":"hazelcast","dir":"hazelcast","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"is STARTED","wait":600},
            {"name":"cassandra","dir":"cassandra","df":"5.0/Dockerfile","ctx":"5.0","bargs":"","exe":"java","settle":90,"trace":300,"port":"","path":"","match":"Startup complete","wait":700},
-           {"name":"aeron","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600}
+           {"name":"aeron","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","klibs":"shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
+           {"name":"sockopt","dir":"sockopt","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"","path":"","match":"SOCKOPT OK","wait":240}
           ]
           EOF
           # .github/javaCheck.only, when present, names the scenarios to run, one per line
@@ -65,6 +66,7 @@ jobs:
       CTX: ${{ matrix.ctx }}
       IMGENV: ${{ matrix.env }}
       IMGCMD: ${{ matrix.cmd }}
+      KLIBS: ${{ matrix.klibs }}
       BARGS: ${{ matrix.bargs }}
       EXE: ${{ matrix.exe }}
       SETTLE: ${{ matrix.settle }}
@@ -104,6 +106,39 @@ jobs:
         run: |
           mkdir -p sc/test/dockerfile/tomee
           curl -fsSL -o sc/test/dockerfile/tomee/Dockerfile https://raw.githubusercontent.com/tomitribe/docker-tomee/master/TomEE-11.0/jre25/Temurin/ubuntu/plus/Dockerfile
+      # What Aeron asks of a UDP socket and nothing else: the send and receive buffers read back after
+      # being set. It stays alive so that it is the program left running when the trace ends.
+      - name: Make the socket options program
+        run: |
+          d=sc/test/dockerfile/sockopt
+          mkdir -p "$d"
+          cat > "$d/Main.java" <<'EOF'
+          import java.net.StandardSocketOptions;
+          import java.nio.channels.DatagramChannel;
+          public class Main {
+            public static void main(String[] a) throws Exception {
+              DatagramChannel c = DatagramChannel.open();
+              int snd0 = c.getOption(StandardSocketOptions.SO_SNDBUF);
+              int rcv0 = c.getOption(StandardSocketOptions.SO_RCVBUF);
+              c.setOption(StandardSocketOptions.SO_SNDBUF, 131072);
+              c.setOption(StandardSocketOptions.SO_RCVBUF, 131072);
+              int snd = c.getOption(StandardSocketOptions.SO_SNDBUF);
+              int rcv = c.getOption(StandardSocketOptions.SO_RCVBUF);
+              System.out.println("SOCKOPT default SO_SNDBUF=" + snd0 + " SO_RCVBUF=" + rcv0);
+              System.out.println("SOCKOPT after setting 131072 SO_SNDBUF=" + snd + " SO_RCVBUF=" + rcv);
+              System.out.println(snd >= 1408 && rcv >= 1408 ? "SOCKOPT OK" : "SOCKOPT FAIL");
+              Thread.sleep(600000);
+            }
+          }
+          EOF
+          printf '%s\n' \
+            'FROM eclipse-temurin:21-jdk AS build' \
+            'WORKDIR /src' \
+            'COPY Main.java .' \
+            'RUN javac --release 21 Main.java && jar --create --file /app.jar --main-class Main Main.class' \
+            'FROM eclipse-temurin:21-jre' \
+            'COPY --from=build /app.jar /app.jar' \
+            'CMD ["java", "-jar", "/app.jar"]' > "$d/Dockerfile"
       - name: Fetch the Vert.x project
         run: git clone -q --depth=1 https://github.com/vertx-howtos/executable-jar-docker-howto sc/test/dockerfile/vertx
       - name: Fetch the Hazelcast project
@@ -192,7 +227,8 @@ jobs:
           echo "under $home/lib: $(ls "$p/sysroot$home/lib" 2>/dev/null | tr '\n' ' ' | cut -c1-600)"
       - name: Boot it
         run: |
-          ./ops pkg load -l "t-$NAME" --accel=false ${PORT:+-p "$PORT"} > boot.log 2>&1 &
+          if [ -n "$KLIBS" ]; then jq -nc --arg k "$KLIBS" '{Klibs: ($k | split(" "))}' > klibs.json; fi
+          ./ops pkg load -l "t-$NAME" --accel=false ${KLIBS:+-c klibs.json} ${PORT:+-p "$PORT"} > boot.log 2>&1 &
           ok=0
           for i in $(seq 1 "$WAIT"); do
             if [ -n "$PORT" ]; then
