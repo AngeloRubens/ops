@@ -232,11 +232,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           run="$(cat .github/javaCheck.kernel 2>/dev/null | xargs)"
-          if [ -n "$run" ]; then gh run download "$run" -R AngeloRubens/nanos -n kernel -D "$PWD/kdist"; find kdist | head -30; fi
+          if [ -n "$run" ]; then gh run download "$run" -R AngeloRubens/nanos -n kernel -D "$PWD/kdist"; find kdist | head -30
+            for d in "$HOME"/.ops/0.*; do
+              case "$d" in *-arm) continue;; esac
+              [ -f "$d/kernel.img" ] || continue
+              cp kdist/kernel.img kdist/boot.img "$d/"; rm -rf "$d/klibs"; cp -r kdist/klibs "$d/klibs"; echo "kernel under test installed in $d"
+            done
+          fi
       - name: Boot it
         run: |
           cfg='{}'
-          if [ -d kdist ]; then cfg=$(jq -nc --arg d "$PWD/kdist" '{Kernel: ($d + "/kernel.img"), Boot: ($d + "/boot.img"), KlibDir: ($d + "/klibs")}'); fi
           if [ -n "$KLIBS" ]; then cfg=$(echo "$cfg" | jq -c --arg k "$KLIBS" '.Klibs = ($k | split(" "))'); fi
           echo "$cfg" > klibs.json
           ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json ${PORT:+-p "$PORT"} > boot.log 2>&1 &
