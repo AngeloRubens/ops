@@ -43,7 +43,8 @@ jobs:
            {"name":"tomee","dir":"tomee","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"8080","path":"/","match":"TomEE","wait":600},
            {"name":"vertx","dir":"vertx","df":"docker-maven/Dockerfile","ctx":".","bargs":"","exe":"java","settle":30,"trace":180,"port":"8888","path":"/","match":"Hello from Vert.x","wait":600},
            {"name":"hazelcast","dir":"hazelcast","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"is STARTED","wait":600},
-           {"name":"cassandra","dir":"cassandra","df":"5.0/Dockerfile","ctx":"5.0","bargs":"","exe":"java","settle":90,"trace":300,"port":"","path":"","match":"Startup complete","wait":700}
+           {"name":"cassandra","dir":"cassandra","df":"5.0/Dockerfile","ctx":"5.0","bargs":"","exe":"java","settle":90,"trace":300,"port":"","path":"","match":"Startup complete","wait":700},
+           {"name":"aeron","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600}
           ]
           EOF
           # .github/javaCheck.only, when present, names the scenarios to run, one per line
@@ -62,6 +63,7 @@ jobs:
       DIR: ${{ matrix.dir }}
       DF: ${{ matrix.df }}
       CTX: ${{ matrix.ctx }}
+      IMGENV: ${{ matrix.env }}
       BARGS: ${{ matrix.bargs }}
       EXE: ${{ matrix.exe }}
       SETTLE: ${{ matrix.settle }}
@@ -111,14 +113,30 @@ jobs:
           curl -fsSL -o "$d/hazelcast-distribution.zip" https://repo1.maven.org/maven2/com/hazelcast/hazelcast-distribution/5.7.0/hazelcast-distribution-5.7.0.zip
       - name: Fetch the Cassandra project
         run: git clone -q --depth=1 https://github.com/docker-library/cassandra sc/test/dockerfile/cassandra
+      - uses: actions/setup-java@v4
+        if: matrix.name == 'aeron'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch and build the Aeron project
+        if: matrix.name == 'aeron'
+        run: |
+          git clone -q --depth=1 https://github.com/AdaptiveConsulting/aeron-io-samples sc/test/dockerfile/aeron
+          cd sc/test/dockerfile/aeron
+          ./gradlew build -x test --no-daemon -q
+          ls cluster/build/libs
       - name: Build the image
         run: |
           dir="$PWD/sc/test/dockerfile/$DIR"
+          BARGS="${BARGS//@DIR@/$dir}"
           if [ -x "$dir/prepare.sh" ]; then "$dir/prepare.sh" "$dir" > prepare.log 2>&1 || { tail -40 prepare.log; exit 1; }; fi
           df="$dir/$DF"
           if [ -n "$CTX" ]; then ctx="$dir/$CTX"; else ctx="$(dirname "$df")"; fi
           # shellcheck disable=SC2086
           docker build -q $BARGS -t "jc-$NAME:latest" -f "$df" "$ctx" > build.log 2>&1 || { tail -40 build.log; exit 1; }
+          if [ -n "$IMGENV" ]; then
+            { echo "FROM jc-$NAME:latest"; for kv in $IMGENV; do echo "ENV $kv"; done; } | docker build -q -t "jc-$NAME:latest" - > /dev/null
+          fi
           docker image inspect "jc-$NAME:latest" --format 'image: {{.Size}} bytes, user {{.Config.User}}, workdir {{.Config.WorkingDir}}, entrypoint {{.Config.Entrypoint}} cmd {{.Config.Cmd}}'
       - name: Find the real command
         run: |
