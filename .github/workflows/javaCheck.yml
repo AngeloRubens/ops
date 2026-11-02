@@ -243,8 +243,12 @@ jobs:
         run: |
           cfg='{}'
           if [ -n "$KLIBS" ]; then cfg=$(echo "$cfg" | jq -c --arg k "$KLIBS" '.Klibs = ($k | split(" "))'); fi
-          echo "$cfg" > klibs.json
-          ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json ${PORT:+-p "$PORT"} > boot.log 2>&1 &
+          if [ -d kdist ]; then
+            cfg=$(echo "$cfg" | jq -c --arg d "$PWD/kdist" '.Kernel = ($d + "/kernel.img") | .Boot = ($d + "/boot.img") | .KlibDir = ($d + "/klibs")')
+            cat "$HOME/.ops/latest.txt"; echo; find "$HOME/.ops" -maxdepth 2 -name kernel.img -exec sha256sum {} +; sha256sum kdist/kernel.img
+          fi
+          echo "$cfg" > klibs.json; cat klibs.json
+          ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json -v ${PORT:+-p "$PORT"} > boot.log 2>&1 &
           ok=0
           for i in $(seq 1 "$WAIT"); do
             if [ -n "$PORT" ]; then
