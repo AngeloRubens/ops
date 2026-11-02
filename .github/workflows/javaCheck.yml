@@ -225,10 +225,21 @@ jobs:
           echo "top of the sysroot:"; ls -la "$p/sysroot" | tail -n +4 | awk '{print "  " $1, $9, $10, $11}'
           home="$(dirname "$(dirname "$(jq -r .Program "$p/package.manifest")")")"
           echo "under $home/lib: $(ls "$p/sysroot$home/lib" 2>/dev/null | tr '\n' ' ' | cut -c1-600)"
+      # .github/javaCheck.kernel, when present, holds the id of a run of AngeloRubens/nanos whose
+      # artifact "kernel" is booted in place of the released one
+      - name: Fetch the kernel under test
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="$(cat .github/javaCheck.kernel 2>/dev/null | xargs)"
+          if [ -n "$run" ]; then gh run download "$run" -R AngeloRubens/nanos -n kernel -D "$PWD/kdist"; find kdist | head -30; fi
       - name: Boot it
         run: |
-          if [ -n "$KLIBS" ]; then jq -nc --arg k "$KLIBS" '{Klibs: ($k | split(" "))}' > klibs.json; fi
-          ./ops pkg load -l "t-$NAME" --accel=false ${KLIBS:+-c klibs.json} ${PORT:+-p "$PORT"} > boot.log 2>&1 &
+          cfg='{}'
+          if [ -d kdist ]; then cfg=$(jq -nc --arg d "$PWD/kdist" '{Kernel: ($d + "/kernel.img"), Boot: ($d + "/boot.img"), KlibDir: ($d + "/klibs")}'); fi
+          if [ -n "$KLIBS" ]; then cfg=$(echo "$cfg" | jq -c --arg k "$KLIBS" '.Klibs = ($k | split(" "))'); fi
+          echo "$cfg" > klibs.json
+          ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json ${PORT:+-p "$PORT"} > boot.log 2>&1 &
           ok=0
           for i in $(seq 1 "$WAIT"); do
             if [ -n "$PORT" ]; then
