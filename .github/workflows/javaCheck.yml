@@ -164,7 +164,7 @@ jobs:
             [ $leaf = 1 ] && { main=$p; break; }
           done
           if [ -z "$main" ]; then
-            echo "no $EXE process after $SETTLE s"; docker top app; docker logs app 2>&1 | tail -40; exit 1
+            echo "no $EXE process after $SETTLE s"; docker ps -a --filter name=app --format "{{.Status}}"; docker logs app 2>&1 | tail -60; exit 1
           fi
           mapfile -d '' argv < <(sudo cat "/proc/$main/cmdline")
           exe=$(sudo readlink "/proc/$main/exe")
