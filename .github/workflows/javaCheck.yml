@@ -231,7 +231,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          run="$(cat .github/javaCheck.kernel 2>/dev/null | xargs)"
+          run="$(cat sc/.github/javaCheck.kernel 2>/dev/null | xargs)"
           if [ -n "$run" ]; then gh run download "$run" -R AngeloRubens/nanos -n kernel -D "$PWD/kdist"; find kdist | head -30
             for d in "$HOME"/.ops/0.*; do
               case "$d" in *-arm) continue;; esac
