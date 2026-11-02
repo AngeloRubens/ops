@@ -236,7 +236,7 @@ jobs:
             for d in "$HOME"/.ops/0.*; do
               case "$d" in *-arm) continue;; esac
               [ -f "$d/kernel.img" ] || continue
-              cp kdist/kernel.img kdist/boot.img "$d/"; rm -rf "$d/klibs"; cp -r kdist/klibs "$d/klibs"; echo "kernel under test installed in $d"
+              cp kdist/kernel.img kdist/boot.img "$d/"; rm -rf "$d/klibs"; cp -r kdist/klibs "$d/klibs"; echo "kernel under test installed in $d"; ls -la "$HOME"/.ops/images/ "$d"; rm -f "$HOME"/.ops/images/java*
             done
           fi
       - name: Boot it
