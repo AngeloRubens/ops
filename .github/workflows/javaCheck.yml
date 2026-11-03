@@ -81,7 +81,7 @@ jobs:
       CLIENT: ${{ matrix.client }}
       BOOTENV: ${{ matrix.bootenv }}
       # run of AngeloRubens/nanos whose artifact "kernel" is booted in place of the released one
-      KERNEL_RUN: '41598233338'
+      KERNEL_RUN: '41607000590'
     steps:
       - uses: actions/download-artifact@v4
         with:
