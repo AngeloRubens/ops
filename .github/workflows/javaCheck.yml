@@ -112,6 +112,17 @@ jobs:
           sudo apt-get update -qq
           if [ "$(uname -m)" = aarch64 ]; then sudo apt-get install -y -qq qemu-system-arm qemu-efi-aarch64 > /dev/null; else sudo apt-get install -y -qq qemu-system-x86 > /dev/null; fi
           sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+      - name: Seed the ops home with the arm kernel under test
+        if: matrix.runner != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(curl -fsSL https://storage.googleapis.com/nanos/release/latest.txt | tr -d '\n')
+          echo "release $v"
+          mkdir -p "$HOME/.ops/$v-arm"
+          echo -n "$v" > "$HOME/.ops/latest.txt"
+          gh run download "$KERNEL_RUN_ARM" -R AngeloRubens/nanos -n kernel-arm -D "$HOME/.ops/$v-arm"
+          ls -la "$HOME/.ops" "$HOME/.ops/$v-arm"
       - name: Fetch the scenarios
         run: |
           git init -q sc && cd sc
