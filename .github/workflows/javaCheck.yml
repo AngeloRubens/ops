@@ -296,7 +296,8 @@ jobs:
           fi
           echo "$cfg" > klibs.json; cat klibs.json
           if [ "$NAME" = clock ]; then
-            python3 - > skew.txt <<'PY' &
+            python3 - > skew.txt 2> skew.err <<'PY' &
+            sleep 2; ss -ulnp | grep 47000 || echo 'nothing listens on 47000'
           import socket, time
           s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(("0.0.0.0", 47000)); s.settimeout(400)
           t0 = None
@@ -350,7 +351,7 @@ jobs:
             for pat in "${pats[@]}"; do grep -q "$pat" client.log || { echo "missing: $pat"; miss=1; }; done
             if [ $miss = 0 ]; then echo "CLIENT PASS"; else echo "CLIENT FAIL"; ok=0; fi
           fi
-          [ "$NAME" = clock ] && { echo "--- clock ---"; sed -n '1p;10p;20p;40p;$p' skew.txt; }
+          [ "$NAME" = clock ] && { echo "--- clock ---"; sed -n '1p;10p;20p;40p;$p' skew.txt; wc -l skew.txt; cat skew.err; }
           pkill -f qemu-system || true
           sleep 2
           clean() { tr '\r' '\n' < boot.log | grep -vE '^ *[0-9]+% \||^ *$|^warning: stat |points at nothing|is left out:' | cut -c1-400; }
@@ -417,7 +418,9 @@ jobs:
           echo "LEADER lines: $nl, FOLLOWER lines: $nf"
           ok=1
           [ "$nl" = 1 ] || ok=0
-          [ "$nf" -ge $((NODES - 1)) ] || ok=0
+          started=$(cat boot*.log | grep -c "Started Cluster Node" || true); echo "nodes started: $started"
+          [ "$started" = "$NODES" ] || ok=0
+          for i in $(seq 0 $((NODES - 1))); do echo "node $i saw: $(tr '\r' '\n' < boot$i.log | grep -E 'Client session|Adding participant' | tr '\n' ' ')"; done
           if [ -n "$CLIENT" ]; then grep -q "Connected to cluster leader" client.log && grep -q "Participant added with id" client.log || ok=0; fi
           sudo pkill -f "ops pkg load" || true
           for i in $(seq 0 $((NODES - 1))); do sudo pkill -f "img$i" || true; done
