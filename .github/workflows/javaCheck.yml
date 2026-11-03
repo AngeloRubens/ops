@@ -245,6 +245,13 @@ jobs:
           fi
       - name: Boot it
         run: |
+          # the environment of the package wins over -e, so a value that differs between the traced
+          # container and the machine is put in the manifest
+          if [ -n "$BOOTENV" ]; then
+            m="$HOME/.ops/local_packages/amd64/t-$NAME/package.manifest"
+            jq --arg k "${BOOTENV%%=*}" --arg v "${BOOTENV#*=}" '.Env[$k] = $v' "$m" > "$m.new" && mv "$m.new" "$m"
+            jq -c '.Env' "$m"
+          fi
           cfg='{}'
           if [ -n "$KLIBS" ]; then cfg=$(echo "$cfg" | jq -c --arg k "$KLIBS" '.Klibs = ($k | split(" "))'); fi
           if [ -d kdist ]; then
@@ -252,7 +259,7 @@ jobs:
             find "$HOME/.ops" -maxdepth 2 -name kernel.img -exec sha256sum {} +; sha256sum kdist/kernel.img
           fi
           echo "$cfg" > klibs.json; cat klibs.json
-          ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json -v ${UDP:+--udp "$UDP"} ${BOOTENV:+-e "$BOOTENV"} ${PORT:+-p "$PORT"} > boot.log 2>&1 &
+          ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json -v ${UDP:+--udp "$UDP"} ${PORT:+-p "$PORT"} > boot.log 2>&1 &
           ok=0
           for i in $(seq 1 "$WAIT"); do
             if [ -n "$PORT" ]; then
@@ -275,6 +282,7 @@ jobs:
             echo "client: $jar, egress address $(ip -4 -o addr show eth0 | awk '{print $4}')"
             ( sleep 30; echo "add-participant id=777 name=nanosclient"; sleep 10; echo "list-participants"; sleep 10; echo "exit" ) \
               | AUTO_CONNECT=true DUMB_TERMINAL=true PARTICIPANT_ID=500 CLUSTER_ADDRESSES=127.0.0.1 timeout 150 java -jar "$jar" > client.log 2>&1 || true
+            grep -o "hostfwd[^ ]*" boot.log | sort -u | head -5; tr '\r' '\n' < boot.log | grep -v '^ *[0-9]*% ' | tail -15 | cut -c1-200
             echo "--- client log ---"; sed 's/\x1b\[[0-9;]*[A-Za-z]//g' client.log | tr '\r' '\n' | grep -v '^ *$' | tail -40
             if grep -q "Connected to cluster leader" client.log && grep -q "Participant added with id" client.log; then echo "CLIENT PASS"; else echo "CLIENT FAIL"; ok=0; fi
           fi
