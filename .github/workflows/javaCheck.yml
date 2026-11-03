@@ -45,7 +45,7 @@ jobs:
            {"name":"hazelcast","dir":"hazelcast","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"is STARTED","wait":600},
            {"name":"cassandra","dir":"cassandra","df":"5.0/Dockerfile","ctx":"5.0","bargs":"","exe":"java","settle":90,"trace":300,"port":"","path":"","match":"Startup complete","wait":700},
            {"name":"aeron","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
-           {"name":"aeronclient","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=10.0.2.15 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","udp":"9002","client":"1","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
+           {"name":"aeronclient","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","udp":"9002","bootenv":"CLUSTER_ADDRESSES=10.0.2.15","client":"1","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
            {"name":"sockopt","dir":"sockopt","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"","path":"","match":"SOCKOPT OK","wait":240}
           ]
           EOF
@@ -79,6 +79,7 @@ jobs:
       DIAG: ${{ matrix.diag }}
       UDP: ${{ matrix.udp }}
       CLIENT: ${{ matrix.client }}
+      BOOTENV: ${{ matrix.bootenv }}
       # run of AngeloRubens/nanos whose artifact "kernel" is booted in place of the released one
       KERNEL_RUN: '41598233338'
     steps:
@@ -251,7 +252,7 @@ jobs:
             find "$HOME/.ops" -maxdepth 2 -name kernel.img -exec sha256sum {} +; sha256sum kdist/kernel.img
           fi
           echo "$cfg" > klibs.json; cat klibs.json
-          ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json -v ${UDP:+--udp "$UDP"} ${PORT:+-p "$PORT"} > boot.log 2>&1 &
+          ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json -v ${UDP:+--udp "$UDP"} ${BOOTENV:+-e "$BOOTENV"} ${PORT:+-p "$PORT"} > boot.log 2>&1 &
           ok=0
           for i in $(seq 1 "$WAIT"); do
             if [ -n "$PORT" ]; then
