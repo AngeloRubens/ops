@@ -383,7 +383,7 @@ jobs:
             grep -o "hostfwd[^ ]*" boot.log | sort -u | head -5; tr '\r' '\n' < boot.log | grep -v '^ *[0-9]*% ' | tail -15 | cut -c1-200
             echo "--- client log ---"; sed 's/\x1b\[[0-9;]*[A-Za-z]//g' client.log | tr '\r' '\n' | grep -v '^ *$' | tail -40
             need="Connected to cluster leader|Participant added with id"
-            [ "$CLIENT" = admin ] && need="$need|Auction added with id|Bid added to auction|won! Total 2 bids|Auction count"
+            [ "$CLIENT" = admin ] && need="$need|Auction added with id|Bid added to auction|Total 2 bids. Winning price was 250|Auction count"
             miss=0; for pat in ${need//|/ }; do :; done
             IFS='|' read -ra pats <<< "$need"
             for pat in "${pats[@]}"; do grep -q "$pat" client.log || { echo "missing: $pat"; miss=1; }; done
