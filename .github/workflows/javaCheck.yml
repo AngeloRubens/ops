@@ -49,6 +49,7 @@ jobs:
            {"name":"aeronadmin","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","udp":"9002","bootenv":"CLUSTER_ADDRESSES=10.0.2.15","client":"admin","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
            {"name":"aeronwild","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","udp":"9002","bootenv":"CLUSTER_ADDRESSES=0.0.0.0","client":"1","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
            {"name":"sockopt","dir":"sockopt","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"","path":"","match":"SOCKOPT OK","wait":240}
+           {"name":"clock","dir":"clock","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"","path":"","match":"CLOCK DONE","wait":300}
           ]
           EOF
           # .github/javaCheck.only, when present, names the scenarios to run, one per line
@@ -135,6 +136,36 @@ jobs:
               System.out.println("SOCKOPT default SO_SNDBUF=" + snd0 + " SO_RCVBUF=" + rcv0);
               System.out.println("SOCKOPT after setting 131072 SO_SNDBUF=" + snd + " SO_RCVBUF=" + rcv);
               System.out.println(snd >= 1408 && rcv >= 1408 ? "SOCKOPT OK" : "SOCKOPT FAIL");
+              Thread.sleep(600000);
+            }
+          }
+          EOF
+          printf '%s\n' \
+            'FROM eclipse-temurin:21-jdk AS build' \
+            'WORKDIR /src' \
+            'COPY Main.java .' \
+            'RUN javac --release 21 Main.java && jar --create --file /app.jar --main-class Main Main.class' \
+            'FROM eclipse-temurin:21-jre' \
+            'COPY --from=build /app.jar /app.jar' \
+            'CMD ["java", "-jar", "/app.jar"]' > "$d/Dockerfile"
+      # Sends the time of the machine to the host, once a second, to compare it with the host's own.
+      - name: Make the clock program
+        run: |
+          d=sc/test/dockerfile/clock
+          mkdir -p "$d"
+          cat > "$d/Main.java" <<'EOF'
+          import java.net.*;
+          public class Main {
+            public static void main(String[] a) throws Exception {
+              DatagramSocket s = new DatagramSocket();
+              InetAddress h = InetAddress.getByName("10.0.2.2");
+              long m0 = System.nanoTime();
+              for (int i = 0; i < 60; i++) {
+                byte[] b = ("T " + System.currentTimeMillis() + " " + (System.nanoTime() - m0) / 1000000).getBytes();
+                s.send(new DatagramPacket(b, b.length, h, 47000));
+                Thread.sleep(1000);
+              }
+              System.out.println("CLOCK DONE");
               Thread.sleep(600000);
             }
           }
@@ -261,6 +292,21 @@ jobs:
             find "$HOME/.ops" -maxdepth 2 -name kernel.img -exec sha256sum {} +; sha256sum kdist/kernel.img
           fi
           echo "$cfg" > klibs.json; cat klibs.json
+          if [ "$NAME" = clock ]; then
+            python3 - > skew.txt <<'PY' &
+          import socket, time
+          s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(("0.0.0.0", 47000)); s.settimeout(400)
+          t0 = None
+          try:
+              while True:
+                  d, _ = s.recvfrom(100); now = time.time()
+                  _, ms, mono = d.decode().split()
+                  if t0 is None: t0 = now
+                  print("host-minus-guest wallclock ms %d  guest-monotonic-ms %s host-elapsed-ms %d" % (int(now * 1000) - int(ms), mono, int((now - t0) * 1000)), flush=True)
+          except Exception:
+              pass
+          PY
+          fi
           ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json -v ${UDP:+--udp "$UDP"} ${PORT:+-p "$PORT"} > boot.log 2>&1 &
           ok=0
           for i in $(seq 1 "$WAIT"); do
@@ -301,6 +347,7 @@ jobs:
             for pat in "${pats[@]}"; do grep -q "$pat" client.log || { echo "missing: $pat"; miss=1; }; done
             if [ $miss = 0 ]; then echo "CLIENT PASS"; else echo "CLIENT FAIL"; ok=0; fi
           fi
+          [ "$NAME" = clock ] && { echo "--- clock ---"; sed -n '1p;10p;20p;40p;$p' skew.txt; }
           pkill -f qemu-system || true
           sleep 2
           clean() { tr '\r' '\n' < boot.log | grep -vE '^ *[0-9]+% \||^ *$|^warning: stat |points at nothing|is left out:' | cut -c1-400; }
