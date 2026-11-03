@@ -314,6 +314,7 @@ jobs:
               [ -f "$d/kernel.img" ] || continue
               cp kdist/kernel.img kdist/boot.img "$d/"; rm -rf "$d/klibs"; cp -r kdist/klibs "$d/klibs"; echo "kernel under test installed in $d"; ls -la "$HOME"/.ops/images/ "$d"; rm -f "$HOME"/.ops/images/java*
             done
+            true
           fi
       - name: Boot it
         if: matrix.nodes == ''
