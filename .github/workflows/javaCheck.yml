@@ -45,6 +45,7 @@ jobs:
            {"name":"hazelcast","dir":"hazelcast","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"is STARTED","wait":600},
            {"name":"cassandra","dir":"cassandra","df":"5.0/Dockerfile","ctx":"5.0","bargs":"","exe":"java","settle":90,"trace":300,"port":"","path":"","match":"Startup complete","wait":700},
            {"name":"aeron","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
+           {"name":"aeronclient","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=10.0.2.15 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","udp":"9002","client":"1","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
            {"name":"sockopt","dir":"sockopt","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"","path":"","match":"SOCKOPT OK","wait":240}
           ]
           EOF
@@ -76,6 +77,8 @@ jobs:
       MATCH: ${{ matrix.match }}
       WAIT: ${{ matrix.wait }}
       DIAG: ${{ matrix.diag }}
+      UDP: ${{ matrix.udp }}
+      CLIENT: ${{ matrix.client }}
       # run of AngeloRubens/nanos whose artifact "kernel" is booted in place of the released one
       KERNEL_RUN: '41598233338'
     steps:
@@ -152,12 +155,12 @@ jobs:
       - name: Fetch the Cassandra project
         run: git clone -q --depth=1 https://github.com/docker-library/cassandra sc/test/dockerfile/cassandra
       - uses: actions/setup-java@v4
-        if: matrix.name == 'aeron'
+        if: startsWith(matrix.name, 'aeron')
         with:
           distribution: temurin
           java-version: '21'
       - name: Fetch and build the Aeron project
-        if: matrix.name == 'aeron'
+        if: startsWith(matrix.name, 'aeron')
         run: |
           git clone -q --depth=1 https://github.com/AdaptiveConsulting/aeron-io-samples sc/test/dockerfile/aeron
           cd sc/test/dockerfile/aeron
@@ -248,7 +251,7 @@ jobs:
             find "$HOME/.ops" -maxdepth 2 -name kernel.img -exec sha256sum {} +; sha256sum kdist/kernel.img
           fi
           echo "$cfg" > klibs.json; cat klibs.json
-          ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json -v ${PORT:+-p "$PORT"} > boot.log 2>&1 &
+          ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json -v ${UDP:+--udp "$UDP"} ${PORT:+-p "$PORT"} > boot.log 2>&1 &
           ok=0
           for i in $(seq 1 "$WAIT"); do
             if [ -n "$PORT" ]; then
@@ -265,6 +268,14 @@ jobs:
           fi
           if [ $ok = 1 ] && [ -n "$PORT" ]; then
             echo "ANSWER from http://127.0.0.1:$PORT$URL_PATH:"; curl -sS --max-time 5 "http://127.0.0.1:$PORT$URL_PATH" 2>&1 | head -c 300; echo
+          fi
+          if [ $ok = 1 ] && [ -n "$CLIENT" ]; then
+            jar=$(ls sc/test/dockerfile/aeron/admin/build/libs/*-uber.jar | head -1)
+            echo "client: $jar, egress address $(ip -4 -o addr show eth0 | awk '{print $4}')"
+            ( sleep 30; echo "add-participant id=777 name=nanosclient"; sleep 10; echo "list-participants"; sleep 10; echo "exit" ) \
+              | AUTO_CONNECT=true DUMB_TERMINAL=true PARTICIPANT_ID=500 CLUSTER_ADDRESSES=127.0.0.1 timeout 150 java -jar "$jar" > client.log 2>&1 || true
+            echo "--- client log ---"; sed 's/\x1b\[[0-9;]*[A-Za-z]//g' client.log | tr '\r' '\n' | grep -v '^ *$' | tail -40
+            if grep -q "Connected to cluster leader" client.log && grep -q "Participant added with id" client.log; then echo "CLIENT PASS"; else echo "CLIENT FAIL"; ok=0; fi
           fi
           pkill -f qemu-system || true
           sleep 2
