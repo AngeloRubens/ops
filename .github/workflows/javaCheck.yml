@@ -46,6 +46,8 @@ jobs:
            {"name":"cassandra","dir":"cassandra","df":"5.0/Dockerfile","ctx":"5.0","bargs":"","exe":"java","settle":90,"trace":300,"port":"","path":"","match":"Startup complete","wait":700},
            {"name":"aeron","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
            {"name":"aeronclient","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","udp":"9002","bootenv":"CLUSTER_ADDRESSES=10.0.2.15","client":"1","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
+           {"name":"aeronadmin","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","udp":"9002","bootenv":"CLUSTER_ADDRESSES=10.0.2.15","client":"admin","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
+           {"name":"aeronwild","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","udp":"9002","bootenv":"CLUSTER_ADDRESSES=0.0.0.0","client":"1","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
            {"name":"sockopt","dir":"sockopt","df":"Dockerfile","bargs":"","exe":"java","settle":15,"trace":60,"port":"","path":"","match":"SOCKOPT OK","wait":240}
           ]
           EOF
@@ -171,7 +173,7 @@ jobs:
         run: |
           dir="$PWD/sc/test/dockerfile/$DIR"
           BARGS="${BARGS//@DIR@/$dir}"
-          if [ -x "$dir/prepare.sh" ]; then "$dir/prepare.sh" "$dir" > prepare.log 2>&1 || { tail -40 prepare.log; exit 1; }; fi
+          if [ -x "$dir/prepare.sh" ]; then "$dir/prepare.sh" "$dir" > prepare.log 2>&1 || { tail -80 prepare.log; exit 1; }; fi
           df="$dir/$DF"
           if [ -n "$CTX" ]; then ctx="$dir/$CTX"; else ctx="$(dirname "$df")"; fi
           # shellcheck disable=SC2086
@@ -280,11 +282,24 @@ jobs:
           if [ $ok = 1 ] && [ -n "$CLIENT" ]; then
             jar=$(ls sc/test/dockerfile/aeron/admin/build/libs/*-uber.jar | head -1)
             echo "client: $jar, egress address $(ip -4 -o addr show eth0 | awk '{print $4}')"
-            ( sleep 30; echo "add-participant id=777 name=nanosclient"; sleep 10; echo "list-participants"; sleep 10; echo "exit" ) \
-              | AUTO_CONNECT=true DUMB_TERMINAL=true PARTICIPANT_ID=500 CLUSTER_ADDRESSES=127.0.0.1 timeout 150 java -jar "$jar" > client.log 2>&1 || true
+            if [ "$CLIENT" = admin ]; then
+              ( sleep 30; echo "add-participant id=777 name=nanosclient"; sleep 8; echo "list-participants"; sleep 5; \
+                echo "add-auction name=vase created-by=500 duration=20"; sleep 8; echo "list-auctions"; sleep 3; \
+                echo "add-bid auction-id=1 created-by=501 price=100"; sleep 4; echo "add-bid auction-id=1 created-by=777 price=250"; sleep 4; \
+                echo "list-auctions"; sleep 20; echo "list-auctions"; sleep 5; echo "exit" ) \
+                | AUTO_CONNECT=true DUMB_TERMINAL=true PARTICIPANT_ID=500 CLUSTER_ADDRESSES=127.0.0.1 timeout 220 java -jar "$jar" > client.log 2>&1 || true
+            else
+              ( sleep 30; echo "add-participant id=777 name=nanosclient"; sleep 10; echo "list-participants"; sleep 10; echo "exit" ) \
+                | AUTO_CONNECT=true DUMB_TERMINAL=true PARTICIPANT_ID=500 CLUSTER_ADDRESSES=127.0.0.1 timeout 150 java -jar "$jar" > client.log 2>&1 || true
+            fi
             grep -o "hostfwd[^ ]*" boot.log | sort -u | head -5; tr '\r' '\n' < boot.log | grep -v '^ *[0-9]*% ' | tail -15 | cut -c1-200
             echo "--- client log ---"; sed 's/\x1b\[[0-9;]*[A-Za-z]//g' client.log | tr '\r' '\n' | grep -v '^ *$' | tail -40
-            if grep -q "Connected to cluster leader" client.log && grep -q "Participant added with id" client.log; then echo "CLIENT PASS"; else echo "CLIENT FAIL"; ok=0; fi
+            need="Connected to cluster leader|Participant added with id"
+            [ "$CLIENT" = admin ] && need="$need|Auction added with id|Bid added to auction|won! Total 2 bids|Auction count"
+            miss=0; for pat in ${need//|/ }; do :; done
+            IFS='|' read -ra pats <<< "$need"
+            for pat in "${pats[@]}"; do grep -q "$pat" client.log || { echo "missing: $pat"; miss=1; }; done
+            if [ $miss = 0 ]; then echo "CLIENT PASS"; else echo "CLIENT FAIL"; ok=0; fi
           fi
           pkill -f qemu-system || true
           sleep 2
