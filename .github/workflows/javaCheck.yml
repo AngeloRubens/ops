@@ -323,7 +323,6 @@ jobs:
           echo "$cfg" > klibs.json; cat klibs.json
           if [ "$NAME" = clock ]; then
             python3 - > skew.txt 2> skew.err <<'PY' &
-            sleep 2; ss -ulnp | grep 47000 || echo 'nothing listens on 47000'
           import socket, time
           s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(("0.0.0.0", 47000)); s.settimeout(400)
           t0 = None
@@ -336,6 +335,7 @@ jobs:
           except Exception:
               pass
           PY
+            sleep 2; ss -ulnp | grep 47000 || echo 'nothing listens on 47000'
           fi
           ./ops pkg load -l "t-$NAME" --accel=false -c klibs.json -v ${UDP:+--udp "$UDP"} ${PORT:+-p "$PORT"} > boot.log 2>&1 &
           ok=0
@@ -401,6 +401,12 @@ jobs:
           sudo ip link add br0 type bridge
           sudo ip addr add 192.168.100.1/24 dev br0
           sudo ip link set br0 up
+          # the client of the sample advertises the first address of an interface whose name starts
+          # with eth0; this one is on the bridge, so that the machines can reach it
+          sudo ip link add eth0z type dummy
+          sudo ip addr add 192.168.100.100/32 dev eth0z
+          sudo ip link set eth0z up
+          ip -4 -o addr | awk '{print $2, $4}'
           addrs=""; for i in $(seq 0 $((NODES - 1))); do addrs="$addrs${addrs:+,}192.168.100.$((11 + i))"; done
           echo "cluster addresses: $addrs"
           if [ -n "$DNS" ]; then
@@ -463,17 +469,22 @@ jobs:
           echo "leaders after $t turns: $leaders"
           for i in $(seq 0 $((NODES - 1))); do echo "== node $i"; tr '\r' '\n' < boot$i.log | grep -E "assigned|Started|Role change|Client session|Exception|ERROR" | head -12 | cut -c1-200; done
           if [ -n "$CLIENT" ]; then
-            sleep 20
+            sleep 60
             jar=$(ls sc/test/dockerfile/aeron/admin/build/libs/*-uber.jar | head -1)
             echo "client: egress address $(ip -4 -o addr show eth0 | awk '{print $4}'), ingress hosts $addrs"
+            ip -4 -o addr | awk '{print $2, $4}'
             ( sleep 20; echo "add-participant id=777 name=bridgeclient"; sleep 10; echo "list-participants"; sleep 10; echo "exit" ) \
               | AUTO_CONNECT=true DUMB_TERMINAL=true PARTICIPANT_ID=500 CLUSTER_ADDRESSES="$addrs" timeout 200 java -jar "$jar" > client.log 2>&1 || true
             echo "--- client log ---"; sed 's/\x1b\[[0-9;]*[A-Za-z]//g' client.log | tr '\r' '\n' | grep -v '^ *$' | tail -40
           fi
           [ -n "$DNS" ] && { echo "--- name server log ---"; sort dns.log | uniq -c | head -20; }
           echo "--- roles ---"; for i in $(seq 0 $((NODES - 1))); do echo "node $i: $(tr '\r' '\n' < boot$i.log | grep 'Role change' | tr '\n' ' ')"; done
-          nl=$(cat boot*.log | grep -c "Role change: LEADER" || true); nf=$(cat boot*.log | grep -c "Role change: FOLLOWER" || true)
-          echo "LEADER lines: $nl, FOLLOWER lines: $nf"
+          nl=0; nf=0
+          for i in $(seq 0 $((NODES - 1))); do
+            last=$(tr '\r' '\n' < boot$i.log | grep 'Role change' | tail -1)
+            case "$last" in *LEADER*) nl=$((nl + 1));; *) nf=$((nf + 1));; esac
+          done
+          echo "nodes whose last role is LEADER: $nl, others: $nf"
           ok=1
           [ "$nl" = 1 ] || ok=0
           started=$(cat boot*.log | grep -c "Started Cluster Node" || true); echo "nodes started: $started"
