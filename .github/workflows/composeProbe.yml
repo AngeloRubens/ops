@@ -1,0 +1,33 @@
+name: compose probe
+on:
+  push:
+    branches: [check/split-3]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build -o ops -v
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 > /dev/null
+      - name: Get the name server package
+        run: |
+          ./ops pkg get eyberg/ops-dns:0.0.1 2>&1 | tail -5 || true
+          ls ~/.ops/packages/*/ 2>/dev/null | head
+      - name: Look for small packages in the registry
+        run: ./ops pkg list 2>&1 | grep -iE "hello|ops-dns|nginx|redis" | head -10 || true
+      - name: Compose up with the name server and one package
+        run: |
+          ./ops pkg get eyberg/hello:0.0.1 2>&1 | tail -3 || true
+          cat > compose.yaml <<'YAML'
+          packages:
+            - pkg: eyberg/hello:0.0.1
+              name: hello
+          YAML
+          sudo env HOME=$HOME timeout 120 ./ops compose up -f compose.yaml --accel=false 2>&1 | tail -30 || true
+          ip -br addr | head
