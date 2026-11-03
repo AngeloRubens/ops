@@ -45,6 +45,7 @@ jobs:
            {"name":"hazelcast","dir":"hazelcast","df":"Dockerfile","bargs":"","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"is STARTED","wait":600},
            {"name":"cassandra","dir":"cassandra","df":"5.0/Dockerfile","ctx":"5.0","bargs":"","exe":"java","settle":90,"trace":300,"port":"","path":"","match":"Startup complete","wait":700},
            {"name":"aeron","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
+           {"name":"aeronarm","runner":"ubuntu-24.04-arm","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":1500},
            {"name":"aeronclient","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","udp":"9002","bootenv":"CLUSTER_ADDRESSES=10.0.2.15","client":"1","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
            {"name":"aeronbridge3","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","nodes":"3","client":"1","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
            {"name":"aeronbridge1","dir":"aeron","df":"docker/Dockerfile","ctx":"docker","bargs":"--build-context gradle=@DIR@/cluster","env":"CLUSTER_NODE=0 CLUSTER_ADDRESSES=127.0.0.1 CLUSTER_PORT_BASE=9000 BASE_DIR=/home/aeron/jar/aeron-cluster","cmd":"[\"-Daeron.dir=/tmp/aeron\"]","nodes":"1","client":"1","klibs":"tmpfs shmem","exe":"java","settle":60,"trace":240,"port":"","path":"","match":"LEADER","wait":600},
@@ -60,8 +61,8 @@ jobs:
   scenario:
     name: ${{ matrix.name }}
     needs: build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.build.outputs.matrix) }}
@@ -87,15 +88,28 @@ jobs:
       BOOTENV: ${{ matrix.bootenv }}
       # run of AngeloRubens/nanos whose artifact "kernel" is booted in place of the released one
       KERNEL_RUN: '41607000590'
+      KERNEL_RUN_ARM: '41610947395'
     steps:
       - uses: actions/download-artifact@v4
+        if: matrix.runner == ''
         with:
           name: ops-java
+      - uses: actions/checkout@v4
+        if: matrix.runner != ''
+        with:
+          path: opssrc
+      - uses: actions/setup-go@v5
+        if: matrix.runner != ''
+        with:
+          go-version-file: opssrc/go.mod
+      - name: Build ops on this machine
+        if: matrix.runner != ''
+        run: cd opssrc && go build -o ../ops -v
       - name: Install qemu
         run: |
           chmod +x ops
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-x86 > /dev/null
+          if [ "$(uname -m)" = aarch64 ]; then sudo apt-get install -y -qq qemu-system-arm qemu-efi-aarch64 > /dev/null; else sudo apt-get install -y -qq qemu-system-x86 > /dev/null; fi
           sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
       - name: Fetch the scenarios
         run: |
@@ -270,9 +284,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          run="$KERNEL_RUN"; echo "kernel run: $run"
-          if [ -n "$run" ]; then gh run download "$run" -R AngeloRubens/nanos -n kernel -D "$PWD/kdist"; find kdist | head -30
-            for d in "$HOME"/.ops/0.*; do
+          run="$KERNEL_RUN"; art=kernel
+          if [ "$(uname -m)" = aarch64 ]; then run="$KERNEL_RUN_ARM"; art=kernel-arm; fi
+          echo "kernel run: $run $art"
+          ls -la "$HOME/.ops" | head -20
+          if [ -n "$run" ]; then gh run download "$run" -R AngeloRubens/nanos -n "$art" -D "$PWD/kdist"; find kdist | head -30
+            if [ "$art" = kernel-arm ]; then
+              for d in "$HOME"/.ops/0.*-arm; do
+                [ -f "$d/kernel.img" ] || continue
+                cp kdist/kernel.img kdist/bootaa64.efi "$d/"; rm -rf "$d/klibs"; cp -r kdist/klibs "$d/klibs"; echo "arm kernel under test installed in $d"; ls -la "$d"
+              done
+              rm -f "$HOME"/.ops/images/java*
+              rm -rf kdist
+            fi
+            [ "$art" = kernel ] && for d in "$HOME"/.ops/0.*; do
               case "$d" in *-arm) continue;; esac
               [ -f "$d/kernel.img" ] || continue
               cp kdist/kernel.img kdist/boot.img "$d/"; rm -rf "$d/klibs"; cp -r kdist/klibs "$d/klibs"; echo "kernel under test installed in $d"; ls -la "$HOME"/.ops/images/ "$d"; rm -f "$HOME"/.ops/images/java*
