@@ -371,9 +371,9 @@ jobs:
             echo "client: $jar, egress address $(ip -4 -o addr show eth0 | awk '{print $4}')"
             if [ "$CLIENT" = admin ]; then
               ( sleep 30; echo "add-participant id=777 name=nanosclient"; sleep 8; echo "list-participants"; sleep 5; \
-                echo "add-auction name=vase created-by=500 duration=20"; sleep 8; echo "list-auctions"; sleep 3; \
+                echo "add-auction name=vase created-by=500 duration=30"; sleep 8; echo "list-auctions"; sleep 3; \
                 echo "add-bid auction-id=1 created-by=501 price=100"; sleep 4; echo "add-bid auction-id=1 created-by=777 price=250"; sleep 4; \
-                echo "list-auctions"; sleep 20; echo "list-auctions"; sleep 5; echo "exit" ) \
+                echo "list-auctions"; sleep 35; echo "list-auctions"; sleep 5; echo "exit" ) \
                 | AUTO_CONNECT=true DUMB_TERMINAL=true PARTICIPANT_ID=500 CLUSTER_ADDRESSES=127.0.0.1 timeout 220 java -jar "$jar" > client.log 2>&1 || true
             else
               ( sleep 30; echo "add-participant id=777 name=nanosclient"; sleep 10; echo "list-participants"; sleep 10; echo "exit" ) \
