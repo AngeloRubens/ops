@@ -20,14 +20,17 @@ jobs:
           ./ops pkg get eyberg/ops-dns:0.0.1 2>&1 | tail -5 || true
           ls ~/.ops/packages/*/ 2>/dev/null | head
       - name: Look for small packages in the registry
-        run: ./ops pkg list 2>&1 | grep -iE "hello|ops-dns|nginx|redis" | head -10 || true
-      - name: Compose up with the name server and one package
+        run: ./ops pkg list 2>&1 | awk -F"|" '{print $2 $3 $4}' | tr -s " " | head -60 || true
+      - name: Compose up with the name server and two packages
         run: |
-          ./ops pkg get eyberg/hello:0.0.1 2>&1 | tail -3 || true
+          ./ops pkg get eyberg/nginx:1.8.0 2>&1 | tail -3 || true
           cat > compose.yaml <<'YAML'
           packages:
-            - pkg: eyberg/hello:0.0.1
-              name: hello
+            - pkg: eyberg/nginx:1.8.0
+              name: web1
+            - pkg: eyberg/nginx:1.8.0
+              name: web2
           YAML
-          sudo env HOME=$HOME timeout 120 ./ops compose up -f compose.yaml --accel=false 2>&1 | tail -30 || true
+          (sudo env HOME=$HOME timeout 150 ./ops compose up -f compose.yaml 2>&1 | tail -30) || true
           ip -br addr | head
+          pgrep -a qemu | cut -c1-120 | head
