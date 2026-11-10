@@ -141,7 +141,7 @@ func TestAddDNSGivesUpOnADNSThatDoesNotAnswer(t *testing.T) {
 }
 
 // The client of a session that was given none has a timeout.
-func TestTheDefaultDNSClientHasATimeout(t *testing.T) {
+func TestAddDNSDefaultClientHasATimeout(t *testing.T) {
 	if got := (Compose{}).dnsClient().Timeout; got != dnsTimeout || got == 0 {
 		t.Errorf("timeout = %v", got)
 	}
