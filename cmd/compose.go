@@ -49,6 +49,24 @@ import (
 // there yet
 type Compose struct {
 	config *types.Config // don't think this belongs here
+
+	// client talks to the dns; nil means a client that gives up after dnsTimeout. A test gives
+	// it a transport of its own.
+	client *http.Client
+}
+
+// dnsPort is the port the dns of the session listens on; dnsTimeout is how long a request to it
+// may take.
+const (
+	dnsPort    = "8080"
+	dnsTimeout = 10 * time.Second
+)
+
+func (com Compose) dnsClient() *http.Client {
+	if com.client != nil {
+		return com.client
+	}
+	return &http.Client{Timeout: dnsTimeout}
 }
 
 func getComposeContents(composeFile string) []byte {
@@ -179,13 +197,11 @@ func (com Compose) registerService(dnsIP string, host string, pid string, non st
 	return com.addDNS(dnsIP, host, ip, non)
 }
 
-// findBridgedIP, ipPollEvery and dnsPort are variables so that a test can stand in for the
-// machine, the clock and the dns.
+// findBridgedIP and ipPollEvery are variables so that a test can stand in for the machine and the
+// clock.
 var (
 	findBridgedIP = onprem.FindBridgedIPByPID
 	ipPollEvery   = 500 * time.Millisecond
-	dnsPort       = "8080"
-	dnsTimeout    = 10 * time.Second
 )
 
 // waitForIPTries is how many times, ipPollEvery apart, the address of a unikernel is looked for:
@@ -217,7 +233,7 @@ func (com Compose) waitForIP(pid string) (string, error) {
 }
 
 func (com Compose) addDNS(dnsIP string, host string, ip string, non string) error {
-	client := &http.Client{Timeout: dnsTimeout}
+	client := com.dnsClient()
 	if com.config.RunConfig.ShowDebug {
 		fmt.Printf("adding record %s for %s\n", host, ip)
 	}
@@ -241,7 +257,7 @@ func (com Compose) addDNS(dnsIP string, host string, ip string, non string) erro
 		fmt.Println(string(body))
 	}
 
-	if res.StatusCode/100 != 2 {
+	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s: the dns answered %s: %s", host, res.Status, strings.TrimSpace(string(body)))
 	}
 
