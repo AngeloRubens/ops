@@ -65,16 +65,25 @@ func createFile(filepath string) (*os.File, error) {
 	return fd, nil
 }
 
+// resolvConf is the content of /etc/resolv.conf: a nameserver line for each name server, and one
+// search line when there are search domains.
+func resolvConf(c *types.Config) []byte {
+	var data []byte
+	for _, ns := range c.NameServers {
+		data = append(data, []byte(fmt.Sprintln("nameserver ", ns))...)
+	}
+	if len(c.SearchDomains) > 0 {
+		data = append(data, []byte(fmt.Sprintln("search", strings.Join(c.SearchDomains, " ")))...)
+	}
+	return data
+}
+
 // add /etc/resolv.conf
 func addDNSConfig(m *fs.Manifest, c *types.Config) {
 	temp := getImageTempDir(c)
 	resolv := path.Join(temp, "resolv.conf")
 
-	var data []byte
-	for _, ns := range c.NameServers {
-		data = append(data, []byte(fmt.Sprintln("nameserver ", ns))...)
-	}
-	err := os.WriteFile(resolv, data, 0644)
+	err := os.WriteFile(resolv, resolvConf(c), 0644)
 	if err != nil {
 		fmt.Printf("Failed save dns in temporary resolv.conf, error: %s", err)
 		os.Exit(1)
