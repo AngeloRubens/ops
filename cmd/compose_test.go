@@ -4,12 +4,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/nanovms/ops/types"
+	"gopkg.in/yaml.v2"
 )
 
 // roundTrip lets a function stand in for the network.
@@ -60,7 +62,7 @@ func TestRegisterServiceAddsTheRecordOfTheAddress(t *testing.T) {
 	client, requests := dnsStub(http.StatusOK)
 	machine(t, 0, "192.168.33.5")
 	com := Compose{config: &types.Config{}, client: client}
-	if err := com.registerService("127.0.0.1", "db", "42", "nonce"); err != nil {
+	if err := com.registerService("127.0.0.1", "db", "", "42", "nonce"); err != nil {
 		t.Fatal(err)
 	}
 	got := requests()
@@ -75,7 +77,7 @@ func TestRegisterServiceDoesNotAddARecordWithoutAnAddress(t *testing.T) {
 	client, requests := dnsStub(http.StatusOK)
 	machine(t, 1<<30, "")
 	com := Compose{config: &types.Config{}, client: client}
-	err := com.registerService("127.0.0.1", "db", "42", "nonce")
+	err := com.registerService("127.0.0.1", "db", "", "42", "nonce")
 	if err == nil || !strings.Contains(err.Error(), "ip timeout") || !strings.Contains(err.Error(), "db") {
 		t.Fatalf("err = %v", err)
 	}
@@ -90,7 +92,7 @@ func TestAddDNSWithoutADNSIsAnError(t *testing.T) {
 		return nil, errors.New("connect: connection refused")
 	})}
 	com := Compose{config: &types.Config{}, client: client}
-	if err := com.addDNS("127.0.0.1", "db", "192.168.33.5", "nonce"); err == nil {
+	if err := com.addDNS("127.0.0.1", "db.service", "192.168.33.5", "nonce"); err == nil {
 		t.Fatal("no error")
 	}
 }
@@ -99,7 +101,7 @@ func TestAddDNSWithoutADNSIsAnError(t *testing.T) {
 func TestAddDNSWithAnImpossibleAddressIsAnError(t *testing.T) {
 	client, requests := dnsStub(http.StatusOK)
 	com := Compose{config: &types.Config{}, client: client}
-	if err := com.addDNS("bad host", "db", "192.168.33.5", "nonce"); err == nil {
+	if err := com.addDNS("bad host", "db.service", "192.168.33.5", "nonce"); err == nil {
 		t.Fatal("no error")
 	}
 	if got := requests(); len(got) != 0 {
@@ -116,7 +118,7 @@ func TestAddDNSGivesUpOnADNSThatDoesNotAnswer(t *testing.T) {
 	})}
 	com := Compose{config: &types.Config{}, client: client}
 	done := make(chan error, 1)
-	go func() { done <- com.addDNS("127.0.0.1", "db", "192.168.33.5", "nonce") }()
+	go func() { done <- com.addDNS("127.0.0.1", "db.service", "192.168.33.5", "nonce") }()
 	select {
 	case err := <-done:
 		if err == nil {
@@ -138,8 +140,74 @@ func TestAddDNSDefaultClientHasATimeout(t *testing.T) {
 func TestAddDNSRefusedByTheDNSIsAnError(t *testing.T) {
 	client, _ := dnsStub(http.StatusBadRequest)
 	com := Compose{config: &types.Config{}, client: client}
-	err := com.addDNS("127.0.0.1", "db", "192.168.33.5", "nonce")
+	err := com.addDNS("127.0.0.1", "db.service", "192.168.33.5", "nonce")
 	if err == nil || !strings.Contains(err.Error(), "dns answered") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestDNSNamesOf(t *testing.T) {
+	tests := []struct {
+		mode string
+		want []string
+	}{
+		{"", []string{"db.service"}},
+		{"service", []string{"db.service"}},
+		{"plain", []string{"db"}},
+		{"both", []string{"db", "db.service"}},
+	}
+	for _, tt := range tests {
+		got, err := dnsNamesOf(tt.mode, "db")
+		if err != nil || !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%q: %v %v, want %v", tt.mode, got, err, tt.want)
+		}
+	}
+	if _, err := dnsNamesOf("short", "db"); err == nil || !strings.Contains(err.Error(), "short") {
+		t.Errorf("an unknown mode: %v", err)
+	}
+}
+
+func TestRegisterServiceAddsTheNamesTheFileAsksFor(t *testing.T) {
+	for mode, want := range map[string][]string{
+		"":        {"/add?svc=db.service&ip=192.168.33.5"},
+		"service": {"/add?svc=db.service&ip=192.168.33.5"},
+		"plain":   {"/add?svc=db&ip=192.168.33.5"},
+		"both":    {"/add?svc=db&ip=192.168.33.5", "/add?svc=db.service&ip=192.168.33.5"},
+	} {
+		client, requests := dnsStub(http.StatusOK)
+		machine(t, 0, "192.168.33.5")
+		com := Compose{config: &types.Config{}, client: client}
+		if err := com.registerService("127.0.0.1", "db", mode, "42", "nonce"); err != nil {
+			t.Fatalf("%q: %v", mode, err)
+		}
+		if got := requests(); !reflect.DeepEqual(got, want) {
+			t.Errorf("%q: requests = %q, want %q", mode, got, want)
+		}
+	}
+}
+
+func TestRegisterServiceWithAnUnknownModeAddsNothing(t *testing.T) {
+	client, requests := dnsStub(http.StatusOK)
+	machine(t, 0, "192.168.33.5")
+	com := Compose{config: &types.Config{}, client: client}
+	if err := com.registerService("127.0.0.1", "db", "short", "42", "nonce"); err == nil {
+		t.Fatal("no error")
+	}
+	if got := requests(); len(got) != 0 {
+		t.Errorf("requests = %q", got)
+	}
+}
+
+func TestComposeFileReadsDNSNames(t *testing.T) {
+	var y ComposeFile
+	if err := yaml.Unmarshal([]byte("dns_names: plain\npackages:\n  - pkg: db\n    name: x_db\n"), &y); err != nil {
+		t.Fatal(err)
+	}
+	if y.DNSNames != "plain" || len(y.Packages) != 1 || y.Packages[0].Pkg != "db" {
+		t.Errorf("file = %+v", y)
+	}
+	var none ComposeFile
+	if err := yaml.Unmarshal([]byte("packages:\n  - pkg: db\n"), &none); err != nil || none.DNSNames != "" {
+		t.Errorf("without the key: %+v %v", none, err)
 	}
 }

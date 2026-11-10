@@ -142,6 +142,10 @@ func (com Compose) UP(composeFile string) {
 		fmt.Println(err)
 	}
 
+	if _, err := dnsNamesOf(y.DNSNames, ""); err != nil {
+		exitWithError(err.Error())
+	}
+
 	com.validatePackagesExist(y)
 
 	brName := genBridgeName()
@@ -172,7 +176,7 @@ func (com Compose) UP(composeFile string) {
 	var failed []string
 	for i := 0; i < len(y.Packages); i++ {
 		pid := com.spawnProgram(y.Packages[i], dnsIP, com.config, brName)
-		if err := com.registerService(dnsIP, y.Packages[i].Pkg, pid, non); err != nil {
+		if err := com.registerService(dnsIP, y.Packages[i].Pkg, y.DNSNames, pid, non); err != nil {
 			fmt.Println(err)
 			failed = append(failed, y.Packages[i].Pkg)
 		}
@@ -188,13 +192,25 @@ func (com Compose) UP(composeFile string) {
 // adds its name to the dns. When the address does not turn up, nothing is added: a record with an
 // empty address is kept by the dns for the whole session, and the name then never resolves, though
 // the unikernel is running.
-func (com Compose) registerService(dnsIP string, host string, pid string, non string) error {
+func (com Compose) registerService(dnsIP string, host string, names string, pid string, non string) error {
+	all, err := dnsNamesOf(names, host)
+	if err != nil {
+		return err
+	}
+
 	ip, err := com.waitForIP(pid)
 	if err != nil {
 		return fmt.Errorf("%s: %w: its name is not registered in the dns", host, err)
 	}
 
-	return com.addDNS(dnsIP, host, ip, non)
+	// every name is tried; the first failure is the one reported
+	var first error
+	for _, name := range all {
+		if err := com.addDNS(dnsIP, name, ip, non); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
 }
 
 // findBridgedIP and ipPollEvery are variables so that a test can stand in for the machine and the
@@ -231,12 +247,13 @@ func (com Compose) waitForIP(pid string) (string, error) {
 	return "", errors.New("ip timeout")
 }
 
+// addDNS adds the record name -> ip to the dns of the session; name is the whole name.
 func (com Compose) addDNS(dnsIP string, host string, ip string, non string) error {
 	client := com.dnsClient()
 	if com.config.RunConfig.ShowDebug {
 		fmt.Printf("adding record %s for %s\n", host, ip)
 	}
-	req, err := http.NewRequest("GET", "http://"+dnsIP+":"+dnsPort+"/add?svc="+url.QueryEscape(host+".service")+"&ip="+url.QueryEscape(ip), nil)
+	req, err := http.NewRequest("GET", "http://"+dnsIP+":"+dnsPort+"/add?svc="+url.QueryEscape(host)+"&ip="+url.QueryEscape(ip), nil)
 	if err != nil {
 		return err
 	}
@@ -479,6 +496,32 @@ type ComposePackage struct {
 // ComposeFile represents a configuration for ops compose.
 type ComposeFile struct {
 	Packages []ComposePackage
+
+	// DNSNames says which names a service is given in the dns of the session: "service" (the
+	// default) for name.service, "plain" for the name alone, "both" for the two.
+	DNSNames string `yaml:"dns_names"`
+}
+
+// The values of dns_names.
+const (
+	dnsNamesService = "service"
+	dnsNamesPlain   = "plain"
+	dnsNamesBoth    = "both"
+)
+
+// dnsNamesOf gives the names the dns is asked to answer to for the service called host. With
+// "plain" a program reaches another by the name it has in a docker compose file, which is what a
+// file written for docker says.
+func dnsNamesOf(mode string, host string) ([]string, error) {
+	switch mode {
+	case "", dnsNamesService:
+		return []string{host + ".service"}, nil
+	case dnsNamesPlain:
+		return []string{host}, nil
+	case dnsNamesBoth:
+		return []string{host, host + ".service"}, nil
+	}
+	return nil, fmt.Errorf("dns_names: %q is not known, it is one of %s, %s or %s", mode, dnsNamesService, dnsNamesPlain, dnsNamesBoth)
 }
 
 func genNon(length int) string {
