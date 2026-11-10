@@ -123,6 +123,10 @@ func (com Compose) UP(composeFile string) {
 		fmt.Println(err)
 	}
 
+	if err := checkDNSSearch(y.DNSSearch); err != nil {
+		exitWithError(err.Error())
+	}
+
 	com.validatePackagesExist(y)
 
 	brName := genBridgeName()
@@ -149,7 +153,7 @@ func (com Compose) UP(composeFile string) {
 
 	// spawn other pkgs
 	for i := 0; i < len(y.Packages); i++ {
-		pid := com.spawnProgram(y.Packages[i], dnsIP, com.config, brName)
+		pid := com.spawnProgram(y.Packages[i], dnsIP, y.DNSSearch, com.config, brName)
 		ip, err := com.waitForIP(pid)
 		if err != nil {
 			fmt.Println(err)
@@ -206,7 +210,7 @@ func (com Compose) addDNS(dnsIP string, host string, ip string, non string) {
 	}
 }
 
-func (com Compose) spawnProgram(comp ComposePackage, dnsIP string, c *types.Config, brName string) string {
+func (com Compose) spawnProgram(comp ComposePackage, dnsIP string, search []string, c *types.Config, brName string) string {
 
 	pkgName := comp.Name
 	pname := comp.Pkg
@@ -250,6 +254,7 @@ func (com Compose) spawnProgram(comp ComposePackage, dnsIP string, c *types.Conf
 	c.RunConfig.InstanceName = pname
 
 	c.NameServers = []string{dnsIP}
+	c.SearchDomains = search
 
 	packageFolder := filepath.Base(pkgFlags.PackagePath())
 	if strings.Contains(executableName, packageFolder) {
@@ -422,6 +427,22 @@ type ComposePackage struct {
 // ComposeFile represents a configuration for ops compose.
 type ComposeFile struct {
 	Packages []ComposePackage
+
+	// DNSSearch is the search domains of the unikernels (the dns_search of a docker compose
+	// file). With "service" a program that asks for "db" is also answered for db.service, the
+	// name ops registers, so the name stays the one the compose file of docker uses.
+	DNSSearch []string `yaml:"dns_search"`
+}
+
+// checkDNSSearch refuses a search domain that is not a plain domain name, since it goes into a
+// line of /etc/resolv.conf.
+func checkDNSSearch(domains []string) error {
+	for _, d := range domains {
+		if d == "" || strings.ContainsAny(d, " \t\r\n#;/") {
+			return fmt.Errorf("dns_search: %q is not a domain", d)
+		}
+	}
+	return nil
 }
 
 func genNon(length int) string {
