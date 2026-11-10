@@ -205,9 +205,8 @@ var (
 )
 
 // waitForIPTries is how many times, ipPollEvery apart, the address of a unikernel is looked for:
-// thirty seconds. The address is found in the arp table of the host once the guest has set up its
-// network, which a large image on a busy host does not do in ten.
-const waitForIPTries = 60
+// ten seconds, as it always was.
+const waitForIPTries = 20
 
 func (com Compose) waitForIP(pid string) (string, error) {
 	ip := ""

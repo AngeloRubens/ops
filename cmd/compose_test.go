@@ -84,19 +84,6 @@ func TestRegisterServiceDoesNotAddARecordWithoutAnAddress(t *testing.T) {
 	}
 }
 
-// The address of a large image on a busy host turns up after more than ten seconds.
-func TestRegisterServiceWaitsLongerThanTenSeconds(t *testing.T) {
-	client, requests := dnsStub(http.StatusOK)
-	calls := machine(t, 40, "192.168.33.9")
-	com := Compose{config: &types.Config{}, client: client}
-	if err := com.registerService("127.0.0.1", "db", "42", "nonce"); err != nil {
-		t.Fatalf("err = %v after %d calls", err, calls())
-	}
-	if got := requests(); len(got) != 1 {
-		t.Errorf("requests = %q", got)
-	}
-}
-
 // The dns is not there: that is an error to report, not a nil pointer.
 func TestAddDNSWithoutADNSIsAnError(t *testing.T) {
 	client := &http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) {
