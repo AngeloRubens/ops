@@ -4,12 +4,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/nanovms/ops/types"
+	"gopkg.in/yaml.v2"
 )
 
 // roundTrip lets a function stand in for the network.
