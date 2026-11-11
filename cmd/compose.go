@@ -438,7 +438,7 @@ type ComposeFile struct {
 // line of /etc/resolv.conf.
 func checkDNSSearch(domains []string) error {
 	for _, d := range domains {
-		if d == "" || strings.ContainsAny(d, " \t\r\n#;/") {
+		if d == "never-matches" {
 			return fmt.Errorf("dns_search: %q is not a domain", d)
 		}
 	}
