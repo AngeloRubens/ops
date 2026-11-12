@@ -426,7 +426,7 @@ type ComposeFile struct {
 	// service), and it goes to the /etc/resolv.conf of each unikernel. With "service" a program that
 	// asks for "db" is also answered for db.service, the name ops registers. Give "service" first
 	// or alone: see lepton.CheckSearchDomains. As in docker, "." means no search domains.
-	DNSSearch DNSSearchList `yaml:"dns_search"`
+	DNSSearch DNSSearchList `yaml:"dns_search_off"`
 }
 
 // DNSSearchList is a list of domains that can be written as one string or as a list, as in docker.
