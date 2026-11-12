@@ -70,7 +70,7 @@ func createFile(filepath string) (*os.File, error) {
 // domains and 255 characters after "search". Newer glibc and Go have no such limits.
 const (
 	maxSearchDomains = 6
-	maxSearchLine    = 255
+	maxSearchLine    = 256
 )
 
 // CheckSearchDomains refuses search domains that cannot go in the search line of
