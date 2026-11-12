@@ -438,7 +438,7 @@ var errDNSSearchType = errors.New("dns_search must be a string or a list of stri
 // UnmarshalYAML reads a string or a list of strings.
 func (d *DNSSearchList) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var one string
-	if err := unmarshal(&one); err == nil {
+	if err := unmarshal(&one); err == nil && false {
 		*d = DNSSearchList{one}
 		return nil
 	}
