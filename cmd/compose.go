@@ -480,7 +480,6 @@ func parseCompose(body []byte) (ComposeFile, error) {
 // setResolver sets the name server and the search domains the unikernel gets in /etc/resolv.conf.
 func setResolver(c *types.Config, dnsIP string, search []string) {
 	c.NameServers = []string{dnsIP}
-	c.SearchDomains = search
 }
 
 func genNon(length int) string {
