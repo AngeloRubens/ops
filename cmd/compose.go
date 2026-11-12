@@ -426,7 +426,7 @@ type ComposeFile struct {
 	// asks for "db" is also answered for db.service, the name ops registers. Give "service" first
 	// or alone: see lepton.CheckSearchDomains. As in docker, "." means no search domains. In compose it
 	// replaces the SearchDomains of the config.json or package.manifest of a package.
-	DNSSearch DNSSearchList `yaml:"dns_search"`
+	DNSSearch DNSSearchList `yaml:"dns_search_off"`
 }
 
 // DNSSearchList is a list of domains that can be written as one string or as a list, as in docker.
