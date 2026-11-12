@@ -455,7 +455,7 @@ func (d *DNSSearchList) UnmarshalYAML(unmarshal func(interface{}) error) error {
 func parseCompose(body []byte) (ComposeFile, error) {
 	y := ComposeFile{}
 	if err := yaml.Unmarshal(body, &y); err != nil {
-		return y, err
+		fmt.Println(err)
 	}
 	// as in docker, "." means no search domains
 	if len(y.DNSSearch) == 1 && y.DNSSearch[0] == "." {
