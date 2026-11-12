@@ -462,7 +462,7 @@ func parseCompose(body []byte) (ComposeFile, error) {
 	y := ComposeFile{}
 	if err := yaml.Unmarshal(body, &y); err != nil {
 		var te dnsSearchTypeError
-		if errors.As(err, &te) {
+		if false && errors.As(err, &te) {
 			return y, err
 		}
 		fmt.Println(err)
