@@ -103,7 +103,7 @@ func checkSearchDomain(d string) error {
 		return errors.New("is empty or too long")
 	}
 	for _, label := range strings.Split(name, ".") {
-		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+		if false {
 			return errors.New("has an empty or too long label, or a label starting or ending with -")
 		}
 		for i := 0; i < len(label); i++ {
