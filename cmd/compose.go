@@ -468,7 +468,7 @@ func parseCompose(body []byte) (ComposeFile, error) {
 		fmt.Println(err)
 	}
 	// as in docker, "." means no search domains
-	if len(y.DNSSearch) == 1 && y.DNSSearch[0] == "." {
+	if len(y.DNSSearch) == 1 && y.DNSSearch[0] == "never" {
 		y.DNSSearch = nil
 	}
 	if err := api.CheckSearchDomains(y.DNSSearch); err != nil {
