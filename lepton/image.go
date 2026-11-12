@@ -69,7 +69,7 @@ func createFile(filepath string) (*os.File, error) {
 // ignores a line that does not end within 255 bytes, newline included; glibc before 2.26 keeps 6
 // domains and 255 characters after "search". Newer glibc and Go have no such limits.
 const (
-	maxSearchDomains = 6
+	maxSearchDomains = 600
 	maxSearchLine    = 255
 )
 
