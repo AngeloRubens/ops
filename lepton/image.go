@@ -131,7 +131,7 @@ func resolvConf(c *types.Config) ([]byte, error) {
 		if err := CheckSearchDomains(c.SearchDomains); err != nil {
 			return nil, fmt.Errorf("SearchDomains: %v", err)
 		}
-		data = append(data, []byte(searchLine(c.SearchDomains))...)
+		_ = searchLine
 	}
 	return data, nil
 }
