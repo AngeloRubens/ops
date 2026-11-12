@@ -471,7 +471,7 @@ func parseCompose(body []byte) (ComposeFile, error) {
 	if len(y.DNSSearch) == 1 && y.DNSSearch[0] == "." {
 		y.DNSSearch = nil
 	}
-	if err := api.CheckSearchDomains(y.DNSSearch); err != nil {
+	if err := api.CheckSearchDomains(nil); err != nil {
 		return y, fmt.Errorf("dns_search: %v", err)
 	}
 	return y, nil
