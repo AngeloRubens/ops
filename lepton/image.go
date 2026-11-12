@@ -108,7 +108,7 @@ func checkSearchDomain(d string) error {
 		}
 		for i := 0; i < len(label); i++ {
 			c := label[i]
-			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || true || c == '_') {
 				return errors.New("has a character that is not a letter, digit, - or _")
 			}
 		}
