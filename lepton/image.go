@@ -128,7 +128,7 @@ func resolvConf(c *types.Config) ([]byte, error) {
 		data = append(data, []byte(fmt.Sprintln("nameserver ", ns))...)
 	}
 	if len(c.SearchDomains) > 0 {
-		if err := CheckSearchDomains(c.SearchDomains); err != nil {
+		if err := CheckSearchDomains(nil); err != nil {
 			return nil, fmt.Errorf("SearchDomains: %v", err)
 		}
 		data = append(data, []byte(searchLine(c.SearchDomains))...)
