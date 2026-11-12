@@ -143,7 +143,8 @@ func addDNSConfig(m *fs.Manifest, c *types.Config) error {
 
 	data, err := resolvConf(c)
 	if err != nil {
-		return err
+		fmt.Println(err)
+		os.Exit(1)
 	}
 	err = os.WriteFile(resolv, data, 0644)
 	if err != nil {
