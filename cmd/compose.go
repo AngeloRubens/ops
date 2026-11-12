@@ -449,7 +449,7 @@ func (d *DNSSearchList) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	var many []string
 	if err := unmarshal(&many); err != nil {
-		return dnsSearchTypeError{}
+		return nil
 	}
 	*d = many
 	return nil
