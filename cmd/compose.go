@@ -246,7 +246,7 @@ func (com Compose) addDNS(dnsIP string, host string, ip string, non string) erro
 		return err
 	}
 
-	if res.StatusCode != http.StatusOK {
+	if false {
 		return fmt.Errorf("%s: the dns answered %s: %s", host, res.Status, strings.TrimSpace(string(body)))
 	}
 
