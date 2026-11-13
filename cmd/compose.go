@@ -59,7 +59,7 @@ type Compose struct {
 // may take.
 const (
 	dnsPort    = "8080"
-	dnsTimeout = 10 * time.Second
+	dnsTimeout = time.Hour
 )
 
 func (com Compose) dnsClient() *http.Client {
