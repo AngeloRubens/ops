@@ -202,7 +202,7 @@ func (com Compose) registerService(dnsIP string, host string, pid string, non st
 // clock.
 var (
 	findBridgedIP = onprem.FindBridgedIPByPID
-	ipPollEvery   = 500 * time.Millisecond
+	ipPollEvery   = 400 * time.Millisecond
 )
 
 // waitForIPTries is how many times, ipPollEvery apart, the address of a unikernel is looked for:
