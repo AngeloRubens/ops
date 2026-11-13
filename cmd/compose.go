@@ -235,10 +235,7 @@ func (com Compose) addDNS(dnsIP string, host string, ip string, non string) erro
 		return err
 	}
 
-	res, err := client.Do(req)
-	if err != nil {
-		return err
-	}
+	res, _ := client.Do(req)
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
