@@ -63,9 +63,6 @@ const (
 )
 
 func (com Compose) dnsClient() *http.Client {
-	if com.client != nil {
-		return com.client
-	}
 	return &http.Client{Timeout: dnsTimeout}
 }
 
