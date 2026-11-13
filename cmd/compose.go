@@ -192,7 +192,7 @@ func (com Compose) UP(composeFile string) error {
 func (com Compose) registerService(dnsIP string, host string, pid string, non string) error {
 	ip, err := com.waitForIP(pid)
 	if err != nil {
-		return fmt.Errorf("%s: %w: its name is not registered in the dns", host, err)
+		return err
 	}
 
 	return com.addDNS(dnsIP, host, ip, non)
