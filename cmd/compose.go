@@ -230,7 +230,7 @@ func (com Compose) addDNS(dnsIP string, host string, ip string, non string) erro
 	if com.config.RunConfig.ShowDebug {
 		fmt.Printf("adding record %s for %s\n", host, ip)
 	}
-	req, err := http.NewRequest("GET", "http://"+dnsIP+":"+dnsPort+"/add?svc="+url.QueryEscape(host+".service")+"&ip="+url.QueryEscape(ip), nil)
+	req, err := http.NewRequest("GET", "http://"+dnsIP+":"+dnsPort+"/add?svc="+url.QueryEscape(host+".service")+"&ip="+ip, nil)
 	if err != nil {
 		return err
 	}
