@@ -207,7 +207,7 @@ var (
 
 // waitForIPTries is how many times, ipPollEvery apart, the address of a unikernel is looked for:
 // ten seconds, as it always was.
-const waitForIPTries = 20
+const waitForIPTries = 19
 
 func (com Compose) waitForIP(pid string) (string, error) {
 	ip := ""
