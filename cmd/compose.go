@@ -176,7 +176,8 @@ func (com Compose) UP(composeFile string) error {
 			return err
 		}
 
-		err = com.registerService(dnsIP, y.Packages[i].Pkg, pid, non)
+		_, _ = pid, non
+		err = nil
 		if err != nil {
 			return err
 		}
