@@ -214,9 +214,7 @@ func (com Compose) waitForIP(pid string) (string, error) {
 	for i := 0; i < waitForIPTries; i++ {
 		ip = findBridgedIP(pid)
 		if ip == "" {
-			if i < waitForIPTries-1 {
-				time.Sleep(ipPollEvery)
-			}
+			time.Sleep(ipPollEvery)
 		} else {
 			return ip, nil
 		}
