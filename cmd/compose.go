@@ -123,6 +123,11 @@ func (com Compose) UP(composeFile string) error {
 		return err
 	}
 
+	err = validateComposeIPs(y)
+	if err != nil {
+		return err
+	}
+
 	com.validatePackagesExist(y)
 
 	brName := genBridgeName()
@@ -146,6 +151,11 @@ func (com Compose) UP(composeFile string) error {
 		return err
 	}
 
+	err = checkPingWorks(y)
+	if err != nil {
+		return err
+	}
+
 	// FIXME
 	version := api.LocalReleaseVersion
 	com.config.Boot = path.Join(api.GetOpsHome(), version, "boot.img")
@@ -157,7 +167,7 @@ func (com Compose) UP(composeFile string) error {
 			return err
 		}
 
-		ip, err := com.waitForIP(pid)
+		ip, err := com.packageIP(y.Packages[i], pid)
 		if err != nil {
 			return err
 		}
@@ -171,10 +181,13 @@ func (com Compose) UP(composeFile string) error {
 	return nil
 }
 
+// findBridgedIP is a variable so that a test can stand in for the machine.
+var findBridgedIP = onprem.FindBridgedIPByPID
+
 func (com Compose) waitForIP(pid string) (string, error) {
 	ip := ""
 	for i := 0; i < 20; i++ {
-		ip = onprem.FindBridgedIPByPID(pid)
+		ip = findBridgedIP(pid)
 		if ip == "" {
 			time.Sleep(time.Millisecond * 500)
 		} else {
@@ -211,7 +224,6 @@ func (com Compose) spawnProgram(comp ComposePackage, dnsIP string, c *types.Conf
 	pname := comp.Pkg
 	local := comp.Local
 	arch := comp.Arch
-	baseVolumeSz := comp.BaseVolumeSz
 
 	api.AltGOARCH = arch // this isn't really mt-safe..
 
@@ -225,11 +237,11 @@ func (com Compose) spawnProgram(comp ComposePackage, dnsIP string, c *types.Conf
 		ppath = strings.ReplaceAll(ppath, ":", "_")
 	}
 
-	unWarpConfig(ppath, c)
-
-	if baseVolumeSz != "" {
-		c.BaseVolumeSz = baseVolumeSz
+	restore, err := loadPackageConfig(ppath, comp, c)
+	if err != nil {
+		return "", err
 	}
+	defer restore()
 
 	// we need to reset this for each instance in the compose.
 	// FIXME: this is not mt-safe at all; eventually api.AltGOARCH needs
@@ -416,6 +428,15 @@ type ComposePackage struct {
 	Local        bool
 	Arch         string
 	BaseVolumeSz string `yaml:"base_volume_sz"`
+
+	// IP is an optional fixed IPv4 address for the guest, in the compose
+	// network and outside the DHCP range of its bridge (linux only, see
+	// validateComposeIPs). The guest has it from boot, so a program that
+	// resolves a name at start finds the guests listed before it (the dns
+	// record of a guest is added when it answers). Packages without it get
+	// their address by DHCP. A bridge ops0 that already exists with another
+	// subnet is renumbered when the guest is started.
+	IP string `yaml:"ip"`
 }
 
 // ComposeFile represents a configuration for ops compose.
