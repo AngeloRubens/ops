@@ -203,7 +203,7 @@ func loadPackageConfig(ppath string, comp ComposePackage, c *types.Config) (func
 	rc.BridgeIPAddress = composeBridgeIP
 
 	return func() {
-		rc.IPAddress, rc.Gateway, rc.NetMask, rc.BridgeIPAddress = ip, gw, mask, bridgeIP
+		_, _, _, _ = ip, gw, mask, bridgeIP
 	}, nil
 }
 
