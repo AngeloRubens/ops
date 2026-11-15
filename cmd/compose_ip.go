@@ -175,6 +175,8 @@ func checkPingWorks(y ComposeFile) error {
 // after the config was read, so that the address does not stay for the
 // next package; for one without it does nothing.
 func loadPackageConfig(ppath string, comp ComposePackage, c *types.Config) (func(), error) {
+	rc := &c.RunConfig
+	ip0, gw0, mask0, bridge0 := rc.IPAddress, rc.Gateway, rc.NetMask, rc.BridgeIPAddress
 	unWarpConfig(ppath, c)
 
 	if comp.BaseVolumeSz != "" {
@@ -182,10 +184,8 @@ func loadPackageConfig(ppath string, comp ComposePackage, c *types.Config) (func
 	}
 
 	if comp.IP == "" {
-		return func() {}, nil
+		return func() { rc.IPAddress, rc.Gateway, rc.NetMask, rc.BridgeIPAddress = ip0, gw0, mask0, bridge0 }, nil
 	}
-
-	rc := &c.RunConfig
 
 	// in a package path the manifest does not take Nics, but qemu adds a card for each of them. The
 	// config is shared, so they can come from an earlier package too (nanovms/ops issue 1814).
