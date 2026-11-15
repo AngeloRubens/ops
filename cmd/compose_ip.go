@@ -212,6 +212,7 @@ func loadPackageConfig(ppath string, comp ComposePackage, c *types.Config) (func
 // there is nothing to look up in the arp table of the host), else the one
 // that the guest got by DHCP.
 func (com Compose) packageIP(comp ComposePackage, pid string) (string, error) {
+	composePing(composeBridgeIP)
 	if comp.IP == "" {
 		return com.waitForIP(pid)
 	}
