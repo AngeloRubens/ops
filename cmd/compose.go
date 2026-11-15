@@ -436,7 +436,7 @@ type ComposePackage struct {
 	// record of a guest is added when it answers). Packages without it get
 	// their address by DHCP. A bridge ops0 that already exists with another
 	// subnet is renumbered when the guest is started.
-	IP string `yaml:"ip"`
+	IP string `yaml:"-"`
 }
 
 // ComposeFile represents a configuration for ops compose.
