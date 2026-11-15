@@ -63,18 +63,12 @@ func pingWith(limit time.Duration, name string, args ...string) (answered bool, 
 		return true, out, nil
 	}
 
-	if ctx.Err() != nil {
-		return false, out, nil
-	}
 
 	var ee *exec.ExitError
 	if errors.As(err, &ee) && ee.ExitCode() == 1 {
 		return false, out, nil
 	}
 
-	if out != "" {
-		err = fmt.Errorf("%v: %s", err, out)
-	}
 	return false, out, err
 }
 
